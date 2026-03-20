@@ -34,3 +34,42 @@ using the Juju Terraform provider.
 | Name | Description |
 |------|-------------|
 | <a name="output_app_name"></a> [app\_name](#output\_app\_name) | The Juju application name |
+
+<!-- BEGIN_TF_DOCS -->
+# Terraform Module for Secure Token Service Operator
+
+This is a Terraform module facilitating the deployment of the secure-token-service charm
+using the Juju Terraform provider.
+---
+## Providers
+
+| Name | Version |
+|------|---------|
+| <a name="provider_juju"></a> [juju](#provider\_juju) | >= 1.0.0 |
+---
+## Requirements
+
+| Name | Version |
+|------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5.0 |
+| <a name="requirement_juju"></a> [juju](#requirement\_juju) | >= 1.0.0 |
+---
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| <a name="input_model"></a> [model](#input\_model) | The Juju model uuid | `string` | n/a | yes |
+| <a name="input_app_name"></a> [app\_name](#input\_app\_name) | The Juju application name | `string` | n/a | yes |
+| <a name="input_config"></a> [config](#input\_config) | The charm config | `map(string)` | `{}` | no |
+| <a name="input_constraints"></a> [constraints](#input\_constraints) | The constraints to be applied | `string` | `""` | no |
+| <a name="input_units"></a> [units](#input\_units) | The number of units | `number` | `1` | no |
+| <a name="input_base"></a> [base](#input\_base) | The charm base | `string` | `"ubuntu@24.04"` | no |
+| <a name="input_channel"></a> [channel](#input\_channel) | The charm channel | `string` | `"latest/edge"` | no |
+| <a name="input_revision"></a> [revision](#input\_revision) | The charm revision | `number` | `null` | no |
+---
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| <a name="output_app_name"></a> [app\_name](#output\_app\_name) | The Juju application name |
+<!-- END_TF_DOCS -->
