@@ -2,54 +2,339 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charmed Secure Token Service (STS) Operator."""
+"""Charmed Secure Token Service (STS Janus) Operator."""
 
 import logging
+from typing import Any
+from urllib.parse import urljoin
 
-from ops.charm import CharmBase
-from ops.main import main
-from ops.model import ActiveStatus
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificatesAvailableEvent,
+    CertificatesRemovedEvent,
+)
+from charms.data_platform_libs.v0.data_interfaces import (
+    DatabaseCreatedEvent,
+    DatabaseEndpointsChangedEvent,
+    DatabaseRequires,
+)
+from charms.hydra.v0.oauth import ClientConfig as OauthClientConfig
+from charms.hydra.v0.oauth import OAuthInfoChangedEvent, OAuthRequirer
+from charms.istio_beacon_k8s.v0.service_mesh import ServiceMeshConsumer
+from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
+    KubernetesComputeResourcesPatch,
+    ResourceRequirements,
+    adjust_resource_requirements,
+)
+from ops import (
+    ActionEvent,
+    ActiveStatus,
+    BlockedStatus,
+    CharmBase,
+    ConfigChangedEvent,
+    HookEvent,
+    MaintenanceStatus,
+    PebbleReadyEvent,
+    RelationBrokenEvent,
+    StartEvent,
+    StatusBase,
+    WaitingStatus,
+    main,
+)
+from ops.pebble import Layer
+
+from cli import CommandLine
+from configs import CharmConfig
+from constants import (
+    DATABASE_INTEGRATION_NAME,
+    ISTIO_INGRESS_INTEGRATION_NAME,
+    OAUTH_GRANT_TYPES,
+    OAUTH_INTEGRATION_NAME,
+    OAUTH_SCOPES,
+    PEER_INTEGRATION_NAME,
+    RECEIVE_CA_CERT_INTEGRATION_NAME,
+    STS_HTTP_PORT,
+    WORKLOAD_CONTAINER,
+    WORKLOAD_SERVICE,
+)
+from exceptions import MigrationError, PebbleServiceError
+from integrations import (
+    DatabaseConfig,
+    IstioIngressIntegration,
+    OAuthConfig,
+    PeerData,
+    TrustedCertificatesTransferIntegration,
+)
+from services import PebbleService, WorkloadService
+from utils import (
+    container_connectivity,
+    database_integration_exists,
+    oauth_integration_exists,
+    peer_integration_exists,
+    receive_certs_integration_exists,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class SecureTokenServiceCharm(CharmBase):
-    """Charm the service."""
+    """Orchestrates the lifecycle of the Secure Token Service."""
 
-    def __init__(self, *args):
+    def __init__(self, *args: Any) -> None:
         super().__init__(*args)
-        self.container_name = "secure-token-service"
 
-        self.framework.observe(
-            self.on.secure_token_service_pebble_ready,
-            self._on_pebble_ready
+        self._container = self.unit.get_container(WORKLOAD_CONTAINER)
+        self._workload_service = WorkloadService(self.unit)
+        self._pebble_service = PebbleService(self.unit)
+        self._cli = CommandLine(self._container)
+
+        self.peer_data = PeerData(self.model)
+        self.charm_config = CharmConfig(self.config)
+
+        self.database = DatabaseRequires(
+            self,
+            relation_name=DATABASE_INTEGRATION_NAME,
+            database_name=f"{self.model.name}_{self.app.name}",
         )
 
-    def _on_pebble_ready(self, event):
-        """Handle pebble-ready event."""
-        container = event.workload
-        container.add_layer(self.container_name, self._pebble_layer, combine=True)
-        container.autostart()
-        self.unit.status = ActiveStatus()
+        self.istio_ingress = IstioIngressIntegration(self, relation_name=ISTIO_INGRESS_INTEGRATION_NAME)
+
+        # TODO: Add metrics policy when integration is implemented
+        self._service_mesh = ServiceMeshConsumer(self)
+
+        self.oauth = OAuthRequirer(self, self._oauth_client_config)
+
+        self.trusted_cert_transfer = TrustedCertificatesTransferIntegration(self)
+
+        self.framework.observe(self.on.start, self._on_start)
+        self.framework.observe(self.on.secure_token_service_pebble_ready, self._on_pebble_ready)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.run_migration_action, self._on_run_migration_action)
+
+        self.framework.observe(self.database.on.database_created, self._on_database_created)
+        self.framework.observe(self.database.on.endpoints_changed, self._on_database_changed)
+        self.framework.observe(self.on[DATABASE_INTEGRATION_NAME].relation_broken, self._on_database_relation_broken)
+
+        self.framework.observe(self.istio_ingress.requirer.on.ready, self._on_ingress_ready)
+
+        self.framework.observe(self.oauth.on.oauth_info_changed, self._on_oauth_info_changed)
+        self.framework.observe(self.oauth.on.oauth_info_removed, self._on_oauth_info_changed)
+
+        self.framework.observe(
+            self.trusted_cert_transfer.cert_transfer_requires.on.certificate_set_updated,
+            self._on_trusted_certificates_available,
+        )
+        self.framework.observe(
+            self.trusted_cert_transfer.cert_transfer_requires.on.certificates_removed,
+            self._on_trusted_certificates_removed,
+        )
+
+        # Resources patching
+        self.resources_patch = KubernetesComputeResourcesPatch(
+            self,
+            WORKLOAD_CONTAINER,
+            resource_reqs_func=self._resource_reqs_from_config,
+        )
 
     @property
-    def _pebble_layer(self):
-        return {
-            "summary": "secure token service layer",
-            "description": "pebble config layer for sts",
-            "services": {
-                self.container_name: {
-                    "override": "replace",
-                    "summary": "secure token service",
-                    # TEMPLATE-TODO: Update with the actual entrypoint command of your image
-                    "command": "/usr/local/bin/secure-token-service",
-                    "startup": "enabled",
-                    "environment": {
-                        "LOG_LEVEL": self.model.config.get("log_level", "info")
-                    },
-                }
-            },
-        }
+    def _pebble_layer(self) -> Layer:
+        database_config = DatabaseConfig.load(self.database)
+        oauth_config = OAuthConfig.load(self.oauth, self._redirect_url)
+        return self._pebble_service.render_pebble_layer(
+            self.charm_config,
+            self.peer_data,
+            database_config,
+            oauth_config,
+        )
+
+    @property
+    def migration_needed(self) -> bool:
+        """Check if database migrations are required."""
+        if not container_connectivity(self) or not self.database.is_resource_created():
+            return False
+
+        dsn = DatabaseConfig.load(self.database).dsn
+        pebble_env = self._pebble_layer.services[WORKLOAD_SERVICE].environment
+
+        return self._cli.check_migrations(dsn, environment=pebble_env)
+
+    @property
+    def _redirect_url(self) -> str:
+        """Calculates the OIDC redirect URI based on the external URL."""
+        if not (external_url := self.istio_ingress.external_url):
+            return f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{STS_HTTP_PORT}/auth/callback"
+        return urljoin(external_url, "/auth/callback")
+
+    @property
+    def _oauth_client_config(self) -> OauthClientConfig:
+        return OauthClientConfig(
+            redirect_uri=self._redirect_url,
+            scope=OAUTH_SCOPES,
+            grant_types=OAUTH_GRANT_TYPES,
+        )
+
+    def _on_start(self, event: StartEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_config_changed(self, event: ConfigChangedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_pebble_ready(self, event: PebbleReadyEvent) -> None:
+        if not container_connectivity(self):
+            self.unit.status = WaitingStatus("Container is not connected yet")
+            event.defer()
+            return
+
+        self._workload_service.open_ports()
+        self._workload_service.update_workload_version()
+
+        self._holistic_handler(event)
+
+    def _resource_reqs_from_config(self) -> ResourceRequirements:
+        requests = {"cpu": "100m", "memory": "200Mi"}
+        limits = {"cpu": self.model.config.get("cpu"), "memory": self.model.config.get("memory")}
+        return adjust_resource_requirements(limits, requests, adhere_to_requests=True)
+
+    def _on_ingress_ready(self, event) -> None:
+        if self.model.relations.get(ISTIO_INGRESS_INTEGRATION_NAME) and self.unit.is_leader():
+            self.istio_ingress.submit_routes()
+
+        self._holistic_handler(event)
+        if self.unit.is_leader():
+            logger.info("This app's ingress URL: %s", self.istio_ingress.external_url)
+            self.oauth.update_client_config(client_config=self._oauth_client_config)
+
+    def _on_database_created(self, event: DatabaseCreatedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_database_changed(self, event: DatabaseEndpointsChangedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_database_relation_broken(self, event: RelationBrokenEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_oauth_info_changed(self, event: OAuthInfoChangedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_trusted_certificates_available(self, event: CertificatesAvailableEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_trusted_certificates_removed(self, event: CertificatesRemovedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_run_migration_action(self, event: ActionEvent) -> None:
+        if not self.unit.is_leader():
+            event.fail("Only the leader unit can run the database migration")
+            return
+
+        if not container_connectivity(self):
+            event.fail("Container is not connected yet")
+            return
+
+        if not peer_integration_exists(self):
+            event.fail("Peer integration is not ready")
+            return
+
+        event.log("Started migrating the database")
+
+        timeout = float(event.params.get("timeout", 120))
+        try:
+            self._cli.migrate(
+                dsn=DatabaseConfig.load(self.database).dsn,
+                timeout=timeout,
+            )
+        except MigrationError as err:
+            event.fail(f"Database migration failed: {err}")
+            return
+        else:
+            event.log("Successfully migrated the database")
+
+    def _check_prerequisites(self) -> tuple[StatusBase | None, bool]:  # noqa: C901
+        """Evaluate if all charm prerequisites are met before configuring the workload.
+
+        This method checks for the presence of required integrations,
+        valid configurations, and database readiness. It acts as a guard circuit
+        to prevent the workload from starting in a broken state.
+
+        Returns:
+            - StatusBase object detailing the missing requirement,
+              or None if all prerequisites are met.
+            - bool indicating whether the current hook event should be deferred.
+        """
+        if not container_connectivity(self):
+            return WaitingStatus("Container is not connected yet"), True
+
+        patch_status = self.resources_patch.get_status()
+        if not isinstance(patch_status, ActiveStatus):
+            return patch_status, False
+
+        if not peer_integration_exists(self):
+            return WaitingStatus(f"Missing {PEER_INTEGRATION_NAME} integration"), True
+
+        if not oauth_integration_exists(self):
+            return BlockedStatus(f"Missing {OAUTH_INTEGRATION_NAME} integration"), False
+
+        oauth_config = OAuthConfig.load(self.oauth, self._redirect_url)
+        if not oauth_config.provider_url or not oauth_config.client_id:
+            return WaitingStatus(f"Waiting for {OAUTH_INTEGRATION_NAME} config"), False
+
+        if not database_integration_exists(self):
+            return BlockedStatus(f"Missing {DATABASE_INTEGRATION_NAME} integration"), False
+
+        if not self.database.is_resource_created():
+            return WaitingStatus("Waiting for database creation"), False
+
+        if not receive_certs_integration_exists(self):
+            return BlockedStatus(f"Missing {RECEIVE_CA_CERT_INTEGRATION_NAME} integration"), False
+
+        # TODO: Replace with valkey integration when implemented
+        if not self.config.get("cache_address") or not self.config.get("cache_password"):
+            return BlockedStatus("Missing valkey/redis configuration"), False
+
+        # Everything is ready
+        return None, False
+
+    def _holistic_handler(self, event: HookEvent) -> None:
+        """Update the application status and configuration and restart the container.
+
+        Args:
+            event: The event triggered when the application needs to be updated.
+        """
+        status, should_defer = self._check_prerequisites()
+        if status:
+            self.unit.status = status
+            if should_defer:
+                event.defer()
+            return
+
+        if self.migration_needed:
+            if not self.unit.is_leader():
+                self.unit.status = WaitingStatus("Waiting for leader unit to run the migration")
+                event.defer()
+                return
+
+            self.unit.status = MaintenanceStatus("Running database migrations")
+            pebble_env = self._pebble_layer.services[WORKLOAD_SERVICE].environment
+            try:
+                self._cli.migrate(DatabaseConfig.load(self.database).dsn, environment=pebble_env)
+                logger.info("Database migration completed successfully")
+            except MigrationError:
+                self.unit.status = BlockedStatus("Database migration failed")
+                logger.error("Auto migration job failed. Please run the migration manually")
+                return
+
+        self.unit.status = MaintenanceStatus("Configuring the container")
+        self.trusted_cert_transfer.update_trusted_ca_certs()
+
+        try:
+            self._pebble_service.plan(self._pebble_layer)
+        except PebbleServiceError:
+            logger.error("Failed to start the service, please check the container logs")
+            self.unit.status = BlockedStatus(
+                f"Failed to restart the service, please check the {WORKLOAD_CONTAINER} logs"
+            )
+            return
+
+        self.unit.status = ActiveStatus()
 
 
 if __name__ == "__main__":
