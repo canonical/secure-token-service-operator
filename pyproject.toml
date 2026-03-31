@@ -16,6 +16,8 @@ output = ".cover/coverage.xml"
 minversion = "6.0"
 log_cli_level = "INFO"
 pythonpath = ["src", "lib", "tests"]
+tmp_path_retention_policy = "none"
+tmp_path_retention_count = 0
 
 # Linting and formatting tools configuration
 [tool.codespell]
@@ -114,6 +116,7 @@ unit = [
 integration = [
     "jubilant",
     "pytest",
+    "requests",
 ]
 dev = [
     { include-group = "fmt" },
