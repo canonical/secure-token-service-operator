@@ -21,25 +21,123 @@ resources:
   oci-image:
     type: oci-image
     description: Secure Token Service oci-image
-    upstream-source: ghcr.io/canonical/secure-token-service:v0.2.1
+    upstream-source: ghcr.io/canonical/secure-token-service:v0.4.0
+
+peers:
+  peer:
+    interface: secure-token-service-peer
+
+provides:
+  provide-cmr-mesh:
+    interface: cross_model_mesh
+    optional: true
+
+requires:
+  pg-database:
+    interface: postgresql_client
+    optional: false
+  ingress:
+    interface: istio_ingress_route
+    limit: 1
+    optional: false
+  service-mesh:
+    limit: 1
+    interface: service_mesh
+    optional: true
+  require-cmr-mesh:
+    interface: cross_model_mesh
+    optional: true
+  oauth:
+    interface: oauth
+    limit: 1
+    description: |
+      Receive oauth server's info and a set of client credentials.
+      This integration can be used to integrate the service with an OAuth2/OIDC Provider.
+    optional: false
+  receive-ca-cert:
+    interface: certificate_transfer
+    limit: 1
+    optional: false
 
 config:
   options:
+    http_proxy:
+      description: URL of the HTTP proxy eg http://proxy.internal:6666, it will set the HTTP_PROXY var in the workload environment
+      type: string
+      default: ''
+    https_proxy:
+      description: URL of the HTTPS proxy eg http://proxy.internal:6666, it will set the HTTPS_PROXY var in the workload environment
+      type: string
+      default: ''
+    no_proxy:
+      description: Domains that need to be excluded from proxying no_proxy="test.com,test.co.uk", it is a comma separate list
+      type: string
+      default: ''
     log_level:
       description: |
         The verbosity of logs produced by STS.
         Available values are: panic, fatal, error, warn, info, debug, and trace.
       type: string
       default: "info"
+    cpu:
+      description: |
+        K8s cpu resource limit, e.g. "1" or "500m". Default is unset (no limit). This value is used
+        for the "limits" portion of the resource requirements (the "requests" portion is
+        automatically deduced from it).
+        See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+      type: string
+    memory:
+      description: |
+        K8s memory resource limit, e.g. "1Gi". Default is unset (no limit). This value is used
+        for the "limits" portion of the resource requirements (the "requests" portion is
+        automatically deduced from it).
+        See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+      type: string
+    cache_address:
+      description: |
+        Address of the cache (Redis/Valkey) service, for example '127.0.0.1:6379'.
+        If not set it will default to an empty string.
+        This is used to connect to the cache service and store session data.
+      type: string
+      default: ''
+    cache_username:
+      description: |
+        Username for the cache (Redis/Valkey) service, if not set it will default to an empty string.
+      type: string
+      default: ''
+    cache_password:
+      description: |
+        Password for the cache (Redis/Valkey) service, if not set it will default to an empty string.
+      type: string
+      default: ''
+    cache_db:
+      description: |
+        Database number for the cache (Redis/Valkey) service, if not set it will default to 0.
+      type: int
+      default: 0
+
+actions:
+  run-migration:
+    description: |
+      Run a migration, this is needed after upgrades. This is a non-reversible operation.
+      Run this after backing up the database.
+    params:
+      timeout:
+        description: Timeout after which the migration will be cancelled.
+        type: number
+        default: 120
 
 ########################### build ###########################
+base: ubuntu@22.04
+
 platforms:
-  ubuntu@22.04:amd64:
+  amd64:
 
 parts:
   charm:
     charm-binary-python-packages:
       - jsonschema
+      - "pydantic>=2"
       - "setuptools>=70.0.0"
     build-packages:
       - "rustc-1.85"

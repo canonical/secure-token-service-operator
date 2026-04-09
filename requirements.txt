@@ -1,1 +1,6 @@
 ops==3.6.0
+charmed-service-mesh-helpers>=0.2.0
+jsonschema==4.26.0
+lightkube-extensions
+pydantic~=2.12.0
+tenacity
