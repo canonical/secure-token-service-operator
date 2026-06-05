@@ -28,6 +28,8 @@ peers:
     interface: secure-token-service-peer
 
 provides:
+  sts-info:
+    interface: sts_info
   provide-cmr-mesh:
     interface: cross_model_mesh
     optional: true

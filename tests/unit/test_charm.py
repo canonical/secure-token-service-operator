@@ -5,7 +5,9 @@
 from unittest.mock import MagicMock, patch
 
 from conftest import (
+    APP_NAME,
     COOKIE_SECRET,
+    MODEL_NAME,
     OAUTH_CLIENT_ID,
     OAUTH_CLIENT_SECRET,
     OAUTH_PROVIDER_INFO,
@@ -508,3 +510,108 @@ class TestIstioIngressIntegration:
         mocked_submit_routes.assert_called_once()
         mocked_charm_holistic_handler.assert_called_once()
         mocked_update_client_config.assert_called_once()
+
+
+class TestStsInfoIntegration:
+    def test_sts_info_ready_populates_relation_databag(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        receive_ca_cert_integration: testing.Relation,
+        sts_info_integration: testing.Relation,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            leader=True,
+            config={"cache_address": VALKEY_ADDRESS, "cache_password": VALKEY_PASSWORD},
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                sts_info_integration,
+            ],
+            secrets=[oauth_secret],
+        )
+
+        state_out = ctx.run(ctx.on.relation_created(sts_info_integration), state_in)
+
+        rel_out = state_out.get_relation(sts_info_integration.id)
+        assert rel_out.local_app_data["http_address"] == (
+            f"http://{APP_NAME}.{MODEL_NAME}.svc.cluster.local:{STS_HTTP_PORT}"
+        )
+        assert rel_out.local_app_data["grpc_address"] == (
+            f"{APP_NAME}.{MODEL_NAME}.svc.cluster.local:{STS_GRPC_PORT}"
+        )
+        assert rel_out.local_app_data["jwks_url"] == (
+            f"http://{APP_NAME}.{MODEL_NAME}.svc.cluster.local:{STS_HTTP_PORT}/.well-known/jwks.json"
+        )
+        assert rel_out.local_app_data["tls_enabled"] == "false"
+
+    def test_non_leader_does_not_write_to_sts_info_databag(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        receive_ca_cert_integration: testing.Relation,
+        sts_info_integration: testing.Relation,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            leader=False,
+            config={"cache_address": VALKEY_ADDRESS, "cache_password": VALKEY_PASSWORD},
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                sts_info_integration,
+            ],
+            secrets=[oauth_secret],
+        )
+
+        state_out = ctx.run(ctx.on.relation_created(sts_info_integration), state_in)
+
+        rel_out = state_out.get_relation(sts_info_integration.id)
+        assert rel_out.local_app_data == {}
+
+    def test_ingress_ready_refreshes_sts_info_databag(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        receive_ca_cert_integration: testing.Relation,
+        ingress_integration: testing.Relation,
+        sts_info_integration: testing.Relation,
+        mocked_submit_routes: MagicMock,
+        mocked_update_client_config: MagicMock,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            leader=True,
+            config={"cache_address": VALKEY_ADDRESS, "cache_password": VALKEY_PASSWORD},
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                ingress_integration,
+                sts_info_integration,
+            ],
+            secrets=[oauth_secret],
+        )
+
+        state_out = ctx.run(ctx.on.relation_changed(ingress_integration), state_in)
+
+        rel_out = state_out.get_relation(sts_info_integration.id)
+        assert "http_address" in rel_out.local_app_data
+        assert "grpc_address" in rel_out.local_app_data
+        assert "jwks_url" in rel_out.local_app_data
+        assert "tls_enabled" in rel_out.local_app_data

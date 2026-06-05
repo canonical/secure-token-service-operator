@@ -14,6 +14,7 @@ from constants import (
     OAUTH_INTEGRATION_NAME,
     PEER_INTEGRATION_NAME,
     RECEIVE_CA_CERT_INTEGRATION_NAME,
+    STS_INFO_INTEGRATION_NAME,
     WORKLOAD_CONTAINER,
 )
 
@@ -229,3 +230,12 @@ def mocked_submit_routes(mocker: MockerFixture) -> MagicMock:
 def mocked_update_client_config(mocker: MockerFixture) -> MagicMock:
     """Mocks the OAuth library client configuration update."""
     return mocker.patch("charms.hydra.v0.oauth.OAuthRequirer.update_client_config")
+
+
+@pytest.fixture
+def sts_info_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint=STS_INFO_INTEGRATION_NAME,
+        interface="sts_info",
+        remote_app_name="some-consumer",
+    )

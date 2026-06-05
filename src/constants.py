@@ -23,6 +23,7 @@ POSTGRESQL_DSN_TEMPLATE = Template("postgres://$username:$password@$endpoint/$da
 
 INGRESS_HTTP_PORT = 80
 ISTIO_INGRESS_INTEGRATION_NAME = "ingress"
+STS_INFO_INTEGRATION_NAME = "sts-info"
 
 OAUTH_INTEGRATION_NAME = "oauth"
 OAUTH_SCOPES = "openid email profile offline_access"
