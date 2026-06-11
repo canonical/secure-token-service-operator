@@ -25,6 +25,7 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     ResourceRequirements,
     adjust_resource_requirements,
 )
+from charms.secure_token_service.v0.sts_info import StsInfoProvider, StsInfoRelationReadyEvent
 from ops import (
     ActionEvent,
     ActiveStatus,
@@ -52,7 +53,9 @@ from constants import (
     OAUTH_SCOPES,
     PEER_INTEGRATION_NAME,
     RECEIVE_CA_CERT_INTEGRATION_NAME,
+    STS_GRPC_PORT,
     STS_HTTP_PORT,
+    STS_INFO_INTEGRATION_NAME,
     WORKLOAD_CONTAINER,
     WORKLOAD_SERVICE,
 )
@@ -98,6 +101,8 @@ class SecureTokenServiceCharm(CharmBase):
 
         self.istio_ingress = IstioIngressIntegration(self, relation_name=ISTIO_INGRESS_INTEGRATION_NAME)
 
+        self.sts_info = StsInfoProvider(self, relation_name=STS_INFO_INTEGRATION_NAME)
+
         # TODO: Add metrics policy when integration is implemented
         self._service_mesh = ServiceMeshConsumer(self)
 
@@ -115,6 +120,7 @@ class SecureTokenServiceCharm(CharmBase):
         self.framework.observe(self.on[DATABASE_INTEGRATION_NAME].relation_broken, self._on_database_relation_broken)
 
         self.framework.observe(self.istio_ingress.requirer.on.ready, self._on_ingress_ready)
+        self.framework.observe(self.sts_info.on.sts_info_ready, self._on_sts_info_ready)
 
         self.framework.observe(self.oauth.on.oauth_info_changed, self._on_oauth_info_changed)
         self.framework.observe(self.oauth.on.oauth_info_removed, self._on_oauth_info_changed)
@@ -158,11 +164,21 @@ class SecureTokenServiceCharm(CharmBase):
         return self._cli.check_migrations(dsn, environment=pebble_env)
 
     @property
+    def _sts_http_address(self) -> str:
+        """Returns the STS HTTP base URL."""
+        if external_url := self.istio_ingress.external_url:
+            return external_url
+        return f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{STS_HTTP_PORT}"
+
+    @property
+    def _sts_grpc_address(self) -> str:
+        """Returns the STS gRPC address (k8s service address)."""
+        return f"{self.app.name}.{self.model.name}.svc.cluster.local:{STS_GRPC_PORT}"
+
+    @property
     def _redirect_url(self) -> str:
         """Calculates the OIDC redirect URI based on the external URL."""
-        if not (external_url := self.istio_ingress.external_url):
-            return f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{STS_HTTP_PORT}/auth/callback"
-        return urljoin(external_url, "/auth/callback")
+        return urljoin(self._sts_http_address, "/auth/callback")
 
     @property
     def _oauth_client_config(self) -> OauthClientConfig:
@@ -194,6 +210,13 @@ class SecureTokenServiceCharm(CharmBase):
         limits = {"cpu": self.model.config.get("cpu"), "memory": self.model.config.get("memory")}
         return adjust_resource_requirements(limits, requests, adhere_to_requests=True)
 
+    def _send_sts_info_rel_data(self) -> None:
+        self.sts_info.update_relations_app_data(
+            http_address=self._sts_http_address,
+            grpc_address=self._sts_grpc_address,
+            tls_enabled=self.istio_ingress.requirer.tls_enabled,
+        )
+
     def _on_ingress_ready(self, event) -> None:
         if self.model.relations.get(ISTIO_INGRESS_INTEGRATION_NAME) and self.unit.is_leader():
             self.istio_ingress.submit_routes()
@@ -202,6 +225,9 @@ class SecureTokenServiceCharm(CharmBase):
         if self.unit.is_leader():
             logger.info("This app's ingress URL: %s", self.istio_ingress.external_url)
             self.oauth.update_client_config(client_config=self._oauth_client_config)
+
+    def _on_sts_info_ready(self, event: StsInfoRelationReadyEvent) -> None:
+        self._holistic_handler(event)
 
     def _on_database_created(self, event: DatabaseCreatedEvent) -> None:
         self._holistic_handler(event)
@@ -333,6 +359,8 @@ class SecureTokenServiceCharm(CharmBase):
                 f"Failed to restart the service, please check the {WORKLOAD_CONTAINER} logs"
             )
             return
+
+        self._send_sts_info_rel_data()
 
         self.unit.status = ActiveStatus()
 

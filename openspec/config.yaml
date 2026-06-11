@@ -1,0 +1,42 @@
+schema: spec-driven
+
+context: |
+  This is a Kubernetes-native Charmed Operator (secure-token-service-operator) written in Python 3.12+ using the Ops SDK.
+  It manages a Go application binary (secure-token-service) handling secure token exchange, validation, and caching within Canonical's Identity Platform.
+
+  Tech stack: Python Ops SDK, Pebble sidecar container manager, Juju 3.x Secrets, Terraform (for bundle deployment).
+  Workload specifications: Exposes gRPC and HTTP ports (e.g., for REST API gateway, token evaluation, and /.well-known/jwks.json checks). Orchestrates database schema migrations via CLI commands prior to workload startup.
+
+  Code conventions & Architectural constraints (mandatory):
+  - File headers: Copyright 2026 Canonical Ltd. / See LICENSE file for licensing details.
+  - Executable files: Executable Python entrypoints (e.g., `src/charm.py`) must include a proper Python 3 shebang (`#!/usr/bin/env python3`) at the beginning of the file.
+  - Centralized Reconciliation: Must implement a centralized logic flow using `_holistic_handler` as the explicit entry point for the reconciliation handler across lifecycle events.
+  - Container Execution: The workload binary must be orchestrated through Pebble layers.
+  - Limit `event.defer()`: Prefer holistic idempotent reconciliation. Deferral is a last resort.
+  - Juju Secrets Protocol: Sensitive data exchange must use Juju 3.x native secrets. Cleartext credentials must never reside directly inside unencrypted relation databags.
+
+  Files & Workspace Structure:
+  - charmcraft.yaml: Monolithic configuration manifest defining charm metadata, container primitives, system limits, relation interfaces (pg-database, oauth, receive-ca-cert, ingress, logging, tracing, prometheus, peer), user-facing configs, and juju actions.
+  - lib/: Charm libraries providing/consuming interfaces for integrating with other charms.
+  - src/charm.py: Orchestrator component. Contains event subscriptions and the main `_holistic_handler` routing loop. Must be kept minimal.
+  - src/services.py: Contains `WorkloadService` and `PebbleService` implementations managing container daemon state and workload versions.
+  - src/configs.py: Contains `CharmConfig` objects validating charm-specific configuration fields and runtime environments.
+  - src/integrations.py: Holds relation wrappers, data transformation mappers, and `EnvVarConvertible` interface implementations.
+  - src/secret.py: Dedicated library code for handling Juju native secrets management and decryption lifecycle events.
+  - src/cli.py: Wraps `secure-token-service` administrative CLI execution (e.g., `migrate up`) via Pebble exec utilities.
+  - src/constants.py: Centralized static string constants, standard integration token names, and exposed infrastructure ports.
+  - src/env_vars.py: Defines `DEFAULT_CONTAINER_ENV` maps and houses the structural `EnvVarConvertible` typing protocol.
+  - src/exceptions.py: Defines custom, domain-specific exception hierarchies for clear failure isolation (e.g., `MigrationError`).
+  - src/utils.py: Houses validation condition factories and specialized predicates (e.g., `is_active_and_idle`, `all_active`).
+  - tests/unit/: Table-driven charm unit path tests leveraging the Ops SDK framework and `pytest-mock`.
+  - tests/integration/: End-to-end cloud-native jubilant integration testing suite.
+
+rules:
+  proposal:
+    - Keep proposals concise and strictly under 400 words.
+    - Always include a Non-goals section.
+    - Map every proposed environmental update directly to the workload data provenance table.
+  tasks:
+    - Break tasks down into distinct, single-event or relation-driven units of work.
+    - Each task must explicitly reference the manifest or code file(s) it mutates (e.g., `src/charm.py`, `charmcraft.yaml`).
+    - Every relation implementation task must contain a parallel task mapping its corresponding unit/integration test suite requirements.
