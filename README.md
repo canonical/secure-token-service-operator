@@ -10,7 +10,7 @@
 
 ## Description
 
-This repository hosts the Kubernetes Python Operator for the Secure Token Service (STS) - Janus.
+This repository hosts the Kubernetes Python Operator for the Secure Token Service (STS).
 It is a Policy Enforcement Point (PEP) and Security Token Service (STS) that sits between external clients and internal microservices.
 Refer to the [STS documentation](https://github.com/canonical/secure-token-service) for more details and architectural overview.
 
