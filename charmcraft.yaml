@@ -3,7 +3,7 @@
 
 name: secure-token-service
 type: charm
-title: Charmed Secure Token Service (Janus)
+title: Charmed Secure Token Service
 summary: Session manager and token issuer for the Canonical centralized identity solution.
 description: |
   Secure Token Service (STS) implements the Phantom Token Pattern for secure session management and internal JWT issuance.
