@@ -2,7 +2,7 @@
 
 This spec defines how the STS charm determines its publicly accessible HTTP address and how it keeps the `sts-info` relation databags current. The charm prefers the external URL from an active Istio ingress relation and falls back to the Kubernetes service address. Whenever the ingress configuration changes the charm refreshes all active `sts-info` relations by calling `update_relations_app_data()`.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Charm wires StsInfoProvider and handles sts_info_ready
 The STS charm SHALL instantiate `StsInfoProvider` and observe `sts_info_ready` to call `update_relations_app_data()`.
