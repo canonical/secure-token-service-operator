@@ -104,11 +104,27 @@ def juju(request: pytest.FixtureRequest) -> Generator[jubilant.Juju, None, None]
         # Respect teardown flags for both models
         if not (request.config.getoption("--no-teardown") or request.session.testsfailed > 0):
             with suppress(jubilant.CLIError):
-                juju_.cli("destroy-model", juju_.model, "--no-prompt", "--destroy-storage", "--force", "--timeout",
-                          "600s", include_model=False)
+                juju_.cli(
+                    "destroy-model",
+                    juju_.model,
+                    "--no-prompt",
+                    "--destroy-storage",
+                    "--force",
+                    "--timeout",
+                    "600s",
+                    include_model=False,
+                )
             with suppress(jubilant.CLIError):
-                juju_.cli("destroy-model", core_model_name, "--no-prompt", "--destroy-storage", "--force", "--timeout",
-                          "600s", include_model=False)
+                juju_.cli(
+                    "destroy-model",
+                    core_model_name,
+                    "--no-prompt",
+                    "--destroy-storage",
+                    "--force",
+                    "--timeout",
+                    "600s",
+                    include_model=False,
+                )
 
 
 @pytest.fixture(scope="session")

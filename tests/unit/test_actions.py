@@ -63,7 +63,9 @@ class TestRunMigrationAction:
             leader=True,
         )
 
-        with pytest.raises(testing.ActionFailed, match="Database migration failed: simulated error"):
+        with pytest.raises(
+            testing.ActionFailed, match="Database migration failed: simulated error"
+        ):
             ctx.run(ctx.on.action(name="run-migration", params={"timeout": 120}), state_in)
 
         dsn = "postgres://sts_user:sts_password@pg.internal:5432/testing_secure-token-service"

@@ -62,7 +62,9 @@ class TestCommandLine:
         with patch.object(
             command_line,
             "_run_cmd",
-            side_effect=ExecError(command=["/usr/bin/app"], exit_code=1, stdout="", stderr="migrations pending")
+            side_effect=ExecError(
+                command=["/usr/bin/app"], exit_code=1, stdout="", stderr="migrations pending"
+            ),
         ):
             result = command_line.check_migrations(dsn)
 
@@ -71,11 +73,7 @@ class TestCommandLine:
     def test_check_migrations_pebble_error(self, command_line: CommandLine) -> None:
         dsn = "postgres://user:password@pg.internal/db"
 
-        with patch.object(
-            command_line,
-            "_run_cmd",
-            side_effect=Error("Pebble connection lost")
-        ):
+        with patch.object(command_line, "_run_cmd", side_effect=Error("Pebble connection lost")):
             result = command_line.check_migrations(dsn)
 
         assert result is True
@@ -102,7 +100,9 @@ class TestCommandLine:
         with patch.object(
             command_line,
             "_run_cmd",
-            side_effect=ExecError(command=["/usr/bin/app"], exit_code=1, stdout="", stderr="db connection failed")
+            side_effect=ExecError(
+                command=["/usr/bin/app"], exit_code=1, stdout="", stderr="db connection failed"
+            ),
         ):
             with pytest.raises(MigrationError):
                 command_line.migrate(dsn)
@@ -121,7 +121,9 @@ class TestCommandLine:
     def test_run_cmd_failed(self, mocked_container: MagicMock, command_line: CommandLine) -> None:
         cmd = ["cmd"]
 
-        mocked_process = MagicMock(wait_output=MagicMock(side_effect=ExecError(cmd, 1, "", "Command not found")))
+        mocked_process = MagicMock(
+            wait_output=MagicMock(side_effect=ExecError(cmd, 1, "", "Command not found"))
+        )
         mocked_container.exec.return_value = mocked_process
 
         with pytest.raises(ExecError):

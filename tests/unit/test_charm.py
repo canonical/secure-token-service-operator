@@ -97,7 +97,9 @@ class TestPebbleReadyEvent:
         container = state_in.get_container(WORKLOAD_CONTAINER)
         state_out = ctx.run(ctx.on.pebble_ready(container), state_in)
 
-        assert state_out.unit_status == testing.BlockedStatus("Missing receive-ca-cert integration")
+        assert state_out.unit_status == testing.BlockedStatus(
+            "Missing receive-ca-cert integration"
+        )
 
     def test_when_missing_cache_config(
         self,
@@ -112,7 +114,12 @@ class TestPebbleReadyEvent:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
             config={"cache_address": VALKEY_ADDRESS, "cache_password": ""},
-            relations=[peer_integration, database_integration, oauth_integration, receive_ca_cert_integration],
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+            ],
             secrets=[oauth_secret],
         )
 
@@ -284,7 +291,9 @@ class TestPebbleReadyEvent:
 
 
 class TestConfigChangedEvent:
-    def test_when_config_changed_event_emitted(self, mocked_charm_holistic_handler: MagicMock) -> None:
+    def test_when_config_changed_event_emitted(
+        self, mocked_charm_holistic_handler: MagicMock
+    ) -> None:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(can_connect=False)
 
@@ -371,7 +380,9 @@ class TestDatabaseIntegrationEvents:
 
         state_out = ctx.run(ctx.on.relation_changed(database_integration), state_in)
 
-        assert state_out.unit_status == testing.WaitingStatus("Waiting for leader unit to run the migration")
+        assert state_out.unit_status == testing.WaitingStatus(
+            "Waiting for leader unit to run the migration"
+        )
 
     @patch("charm.CommandLine.migrate")
     def test_when_migration_not_needed(
@@ -449,7 +460,12 @@ class TestOAuthIntegrationEvents:
                 "cache_password": VALKEY_PASSWORD,
                 "cache_username": VALKEY_USERNAME,
             },
-            relations=[peer_integration, oauth_integration, database_integration, receive_ca_cert_integration],
+            relations=[
+                peer_integration,
+                oauth_integration,
+                database_integration,
+                receive_ca_cert_integration,
+            ],
             secrets=[oauth_secret],
         )
 

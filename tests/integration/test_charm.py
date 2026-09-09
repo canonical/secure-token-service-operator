@@ -108,7 +108,9 @@ def test_build_and_deploy_hydra_core_deps(juju: jubilant.Juju) -> None:
     )
 
 
-@pytest.mark.skip(reason="Valkey is currently only available in the edge channel and fails to start in GitHub CI")
+@pytest.mark.skip(
+    reason="Valkey is currently only available in the edge channel and fails to start in GitHub CI"
+)
 @pytest.mark.setup
 def test_deploy_valkey(juju: jubilant.Juju) -> None:
     """Deploy Valkey."""
@@ -134,11 +136,7 @@ def test_build_and_deploy(juju: jubilant.Juju, local_charm: Path, tmp_path: Path
         # Create the file inside the pytest temporary directory
         image_resource_path = tmp_path / "image.yaml"
 
-        content = (
-            f"registrypath: {STS_IMAGE}\n"
-            f"username: {gh_username}\n"
-            f"password: {gh_pat}\n"
-        )
+        content = f"registrypath: {STS_IMAGE}\nusername: {gh_username}\npassword: {gh_pat}\n"
         image_resource_path.write_text(content)
         resource = {"oci-image": str(image_resource_path)}
     else:
@@ -226,7 +224,9 @@ def test_ingress_routing_and_redirect(juju) -> None:
         pytest.fail(f"Failed to connect to Istio Ingress at {login_url}: {e}")
 
     # Verify the redirection to Hydra
-    assert response.status_code in (302, 303), f"Expected redirect, got {response.status_code}. Response body: {response.text}"
+    assert response.status_code in (302, 303), (
+        f"Expected redirect, got {response.status_code}. Response body: {response.text}"
+    )
 
 
 @pytest.mark.skip(reason="Missing Valkey config blocks STS from starting")
