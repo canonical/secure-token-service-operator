@@ -31,12 +31,32 @@ context: |
   - tests/unit/: Table-driven charm unit path tests leveraging the Ops SDK framework and `pytest-mock`.
   - tests/integration/: End-to-end cloud-native jubilant integration testing suite.
 
+  Product language:
+  - Write OpenSpec proposals and specs in user-facing product behavior language
+  - Requirements should describe the experience, observable behavior, and product contract
+  - Put internal mechanisms in design.md or tasks.md unless the mechanism is itself part of the user-facing contract
+  - Avoid technical jargon in proposals and specs when possible
+
 rules:
   proposal:
     - Keep proposals concise and strictly under 400 words.
-    - Always include a Non-goals section.
+    - Include a "Non-goals" section to clarify what is out of scope for the proposal
+    - Include a "Success Metrics" section defining how we will measure the impact of this feature
     - Map every proposed environmental update directly to the workload data provenance table.
+  specs:
+    - Include a "Purpose" section for each spec to explain the rationale behind the spec
+    - Cover happy path, validation errors, and edge cases in the spec
+    - Explicitly state any breaking changes or backward compatibility requirements
+  design:
+    - All design decisions should be justified with trade-offs and alternatives considered
+    - Include database schema modifications (e.g., tables, indexes, migrations) explicitly when applicable
+    - Include diagrams (Mermaid) or visual aids when describing complex designs
+    - Include security, performance, observability, scalability, migration considerations as applicable to the design
   tasks:
     - Break tasks down into distinct, single-event or relation-driven units of work.
+    - Every task must be independently completable (no implicit ordering within a group)
     - Each task must explicitly reference the manifest or code file(s) it mutates (e.g., `src/charm.py`, `charmcraft.yaml`).
-    - Every relation implementation task must contain a parallel task mapping its corresponding unit/integration test suite requirements.
+    - Explicitly list unit, integration, or e2e testing requirements for each task (every relation implementation task must contain a parallel task mapping its corresponding unit/integration test suite requirements).
+    - Include a verification suite section
+    - Include a documentation & rollout section covering any necessary documentation updates and rollout steps
+    - Record deviations from the plan in an "Implementation Notes" section at the end
