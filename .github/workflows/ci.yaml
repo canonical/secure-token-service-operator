@@ -17,6 +17,10 @@ on:
      - "terraform/**"
 
 jobs:
+  openspec-check:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/openspec-check.yaml
+
   tests:
     name: CI
     permissions:
