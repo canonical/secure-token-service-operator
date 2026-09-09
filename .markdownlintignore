@@ -8,5 +8,8 @@ CHANGELOG.md
 .github/prompts/opsx*.md
 .github/skills/openspec*/
 .agent/skills/openspec*/
+.agents/skills/openspec*/
 .agent/workflows/openspec*/
+.agents/workflows/openspec*/
 openspec/
+terraform/MODULE_SPECS.md
