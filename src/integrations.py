@@ -207,7 +207,7 @@ class IstioIngressIntegration:
 
     @property
     def external_url(self) -> str | None:
-        """Returns the public URL if provided by the Istio gateway."""
+        """Public URL if provided by the Istio gateway."""
         if not self.requirer.external_host:
             return None
 
