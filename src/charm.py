@@ -165,19 +165,19 @@ class SecureTokenServiceCharm(CharmBase):
 
     @property
     def _sts_http_address(self) -> str:
-        """Returns the STS HTTP base URL."""
+        """STS HTTP base URL."""
         if external_url := self.istio_ingress.external_url:
             return external_url
         return f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{STS_HTTP_PORT}"
 
     @property
     def _sts_grpc_address(self) -> str:
-        """Returns the STS gRPC address (k8s service address)."""
+        """STS gRPC address (k8s service address)."""
         return f"{self.app.name}.{self.model.name}.svc.cluster.local:{STS_GRPC_PORT}"
 
     @property
     def _redirect_url(self) -> str:
-        """Calculates the OIDC redirect URI based on the external URL."""
+        """OIDC redirect URI based on the external URL."""
         return urljoin(self._sts_http_address, "/auth/callback")
 
     @property
