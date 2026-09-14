@@ -126,7 +126,9 @@ def is_active(app: str) -> StatusPredicate:
 
 def is_active_and_idle(app: str) -> StatusPredicate:
     """Ensures the app is active and the Juju agent is not running any hooks."""
-    return lambda status: jubilant.all_active(status, app) and jubilant.all_agents_idle(status, app)
+    return lambda status: (
+        jubilant.all_active(status, app) and jubilant.all_agents_idle(status, app)
+    )
 
 
 def is_blocked(app: str) -> StatusPredicate:

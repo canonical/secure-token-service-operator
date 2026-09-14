@@ -120,7 +120,9 @@ class TestStsInfoProvider:
             state_out = mgr.run()
 
         rel_out = state_out.get_relation(relation.id)
-        assert rel_out.local_app_data["jwks_url"] == "https://sts.example.com/.well-known/jwks.json"
+        assert (
+            rel_out.local_app_data["jwks_url"] == "https://sts.example.com/.well-known/jwks.json"
+        )
 
     def test_tls_enabled_false_stored_as_string(self) -> None:
         ctx = testing.Context(_ProviderCharm, meta=PROVIDER_META)

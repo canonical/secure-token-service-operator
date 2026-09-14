@@ -2,7 +2,7 @@
 
 This spec defines the `charms.secure_token_service.v0.sts_info` Juju charm library, which implements the `sts_ready` interface. The library enables STS charm deployments to advertise their HTTP/gRPC endpoints, JWKS URL, and TLS state to consuming charms via a Juju relation, and enables consuming charms to observe changes and read that data using Pydantic-validated models.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Library uses Pydantic v2 for data validation
 The library SHALL define a `StsInfoData(pydantic.BaseModel)` model containing `http_address`, `grpc_address`, `jwks_url`, and `tls_enabled` fields. The provider SHALL use this model to serialize data before writing to the relation databag; the requirer SHALL use it to parse and validate data read from the databag.

@@ -31,8 +31,12 @@ class TestWorkloadService:
         with patch("cli.CommandLine.get_service_version", return_value=version):
             assert workload_service.version == expected
 
-    def test_update_workload_version(self, mocked_unit: MagicMock, workload_service: WorkloadService) -> None:
-        with patch("services.WorkloadService.version", new_callable=PropertyMock, return_value="v0.2.1"):
+    def test_update_workload_version(
+        self, mocked_unit: MagicMock, workload_service: WorkloadService
+    ) -> None:
+        with patch(
+            "services.WorkloadService.version", new_callable=PropertyMock, return_value="v0.2.1"
+        ):
             workload_service.update_workload_version()
         mocked_unit.set_workload_version.assert_called_once_with("v0.2.1")
 
@@ -53,7 +57,11 @@ class TestWorkloadService:
         mocked_unit.set_workload_version.side_effect = Exception(error_msg)
 
         with caplog.at_level("ERROR"):
-            with patch("services.WorkloadService.version", new_callable=PropertyMock, return_value="v0.2.1"):
+            with patch(
+                "services.WorkloadService.version",
+                new_callable=PropertyMock,
+                return_value="v0.2.1",
+            ):
                 workload_service.update_workload_version()
 
         mocked_unit.set_workload_version.assert_called_once_with("v0.2.1")
@@ -139,8 +147,9 @@ class TestPebbleService:
         mocked_container: MagicMock,
         pebble_service: PebbleService,
     ) -> None:
-        with patch.object(mocked_container, "replan", side_effect=Exception) as replan, \
-            pytest.raises(PebbleServiceError):
+        with patch.object(
+            mocked_container, "replan", side_effect=Exception
+        ) as replan, pytest.raises(PebbleServiceError):
             pebble_service.plan(mocked_layer)
 
         mocked_container.add_layer.assert_called_once_with(
@@ -164,6 +173,8 @@ class TestPebbleService:
             "LOG_LEVEL": "debug",
         }
         assert layer_dict["services"][WORKLOAD_SERVICE]["environment"] == expected_env
-        assert layer_dict["checks"]["http-check"]["http"][
-            "url"] == f"http://127.0.0.1:{STS_HTTP_PORT}/.well-known/jwks.json"
+        assert (
+            layer_dict["checks"]["http-check"]["http"]["url"]
+            == f"http://127.0.0.1:{STS_HTTP_PORT}/.well-known/jwks.json"
+        )
         assert layer_dict["checks"]["grpc-check"]["tcp"]["port"] == STS_GRPC_PORT

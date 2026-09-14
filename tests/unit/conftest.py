@@ -66,13 +66,17 @@ def create_state(
 ) -> testing.State:
     """Factory function to create charm state with explicit parameters."""
     if container is None:
-        execs_list = [
-            testing.Exec(
-                ["/usr/bin/app", "version"],
-                return_code=0,
-                stdout="0.2.1\n",
-            )
-        ] if can_connect else []
+        execs_list = (
+            [
+                testing.Exec(
+                    ["/usr/bin/app", "version"],
+                    return_code=0,
+                    stdout="0.2.1\n",
+                )
+            ]
+            if can_connect
+            else []
+        )
 
         if execs and can_connect:
             execs_list.extend(execs)
@@ -108,7 +112,9 @@ def mocked_unit(mocked_container: MagicMock) -> MagicMock:
 @pytest.fixture
 def mocked_migration_needed(mocker: MockerFixture) -> MagicMock:
     return mocker.patch(
-        "charm.SecureTokenServiceCharm.migration_needed", new_callable=PropertyMock, return_value=False
+        "charm.SecureTokenServiceCharm.migration_needed",
+        new_callable=PropertyMock,
+        return_value=False,
     )
 
 

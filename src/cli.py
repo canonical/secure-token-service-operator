@@ -35,7 +35,9 @@ class CommandLine:
         matched = VERSION_REGEX.search(stdout)
         return matched[0] if matched else None
 
-    def check_migrations(self, dsn: str, timeout: float = 20, environment: Optional[dict] = None) -> bool:
+    def check_migrations(
+        self, dsn: str, timeout: float = 20, environment: Optional[dict] = None
+    ) -> bool:
         """Check if Secure Token Service database migrations are needed."""
         cmd = [
             "/usr/bin/app",
