@@ -2,6 +2,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import json
 from unittest.mock import MagicMock, patch
 
 from conftest import (
@@ -16,11 +17,12 @@ from conftest import (
     VALKEY_USERNAME,
     create_state,
 )
+from dpcharmlibs.interfaces import ResourceRequirerEventHandler, ValkeyResponseModel
 from ops import testing
 from scenario import TCPPort
 
 from charm import SecureTokenServiceCharm
-from constants import STS_GRPC_PORT, STS_HTTP_PORT, WORKLOAD_CONTAINER
+from constants import CACHE_INTEGRATION_NAME, STS_GRPC_PORT, STS_HTTP_PORT, WORKLOAD_CONTAINER
 
 
 class TestStartEvent:
@@ -101,7 +103,35 @@ class TestPebbleReadyEvent:
             "Missing receive-ca-cert integration"
         )
 
-    def test_when_missing_cache_config(
+    def test_when_missing_cache_integration(
+        self,
+        peer_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        database_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        mocked_migration_needed.return_value = False
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            relations=[
+                peer_integration,
+                oauth_integration,
+                database_integration,
+                receive_ca_cert_integration,
+            ],
+            secrets=[oauth_secret],
+        )
+
+        container = state_in.get_container(WORKLOAD_CONTAINER)
+        state_out = ctx.run(ctx.on.pebble_ready(container), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            f"Missing {CACHE_INTEGRATION_NAME} integration"
+        )
+
+    def test_when_cache_relation_present_and_waiting(
         self,
         peer_integration: testing.Relation,
         database_integration: testing.Relation,
@@ -111,14 +141,19 @@ class TestPebbleReadyEvent:
         mocked_migration_needed: MagicMock,
     ) -> None:
         mocked_migration_needed.return_value = False
+        cache_unready_integration = testing.Relation(
+            endpoint=CACHE_INTEGRATION_NAME,
+            interface="valkey_client",
+            remote_app_name="valkey",
+        )
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
-            config={"cache_address": VALKEY_ADDRESS, "cache_password": ""},
             relations=[
                 peer_integration,
                 database_integration,
                 oauth_integration,
                 receive_ca_cert_integration,
+                cache_unready_integration,
             ],
             secrets=[oauth_secret],
         )
@@ -126,7 +161,83 @@ class TestPebbleReadyEvent:
         container = state_in.get_container(WORKLOAD_CONTAINER)
         state_out = ctx.run(ctx.on.pebble_ready(container), state_in)
 
-        assert state_out.unit_status == testing.BlockedStatus("Missing valkey/redis configuration")
+        assert state_out.unit_status == testing.WaitingStatus("Waiting for cache creation")
+
+    def test_when_cache_relation_has_fatal_status(
+        self,
+        peer_integration: testing.Relation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        mocked_migration_needed.return_value = False
+        cache_fatal_integration = testing.Relation(
+            endpoint=CACHE_INTEGRATION_NAME,
+            interface="valkey_client",
+            remote_app_name="valkey",
+            remote_app_data={
+                "status": json.dumps([
+                    {"code": 5001, "message": "Cluster quota exceeded", "resolution": "Fix"}
+                ])
+            },
+        )
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_fatal_integration,
+            ],
+            secrets=[oauth_secret],
+        )
+
+        container = state_in.get_container(WORKLOAD_CONTAINER)
+        state_out = ctx.run(ctx.on.pebble_ready(container), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            "Cache error: Cluster quota exceeded"
+        )
+
+    def test_when_cache_relation_has_transitory_status(
+        self,
+        peer_integration: testing.Relation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        mocked_migration_needed.return_value = False
+        cache_transitory_integration = testing.Relation(
+            endpoint=CACHE_INTEGRATION_NAME,
+            interface="valkey_client",
+            remote_app_name="valkey",
+            remote_app_data={
+                "status": json.dumps([
+                    {"code": 4001, "message": "Rebalancing shards", "resolution": "Wait"}
+                ])
+            },
+        )
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_transitory_integration,
+            ],
+            secrets=[oauth_secret],
+        )
+
+        container = state_in.get_container(WORKLOAD_CONTAINER)
+        state_out = ctx.run(ctx.on.pebble_ready(container), state_in)
+
+        assert state_out.unit_status == testing.WaitingStatus("Cache: Rebalancing shards")
 
     def test_auto_migration_completed_successfully(
         self,
@@ -134,7 +245,9 @@ class TestPebbleReadyEvent:
         database_integration: testing.Relation,
         oauth_integration: testing.Relation,
         receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
         oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
         mocked_migration_needed: MagicMock,
         mocked_cli_migrate: MagicMock,
     ) -> None:
@@ -142,18 +255,14 @@ class TestPebbleReadyEvent:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
             can_connect=True,
-            config={
-                "cache_address": VALKEY_ADDRESS,
-                "cache_password": VALKEY_PASSWORD,
-                "cache_username": VALKEY_USERNAME,
-            },
             relations=[
                 peer_integration,
                 database_integration,
                 oauth_integration,
                 receive_ca_cert_integration,
+                cache_integration,
             ],
-            secrets=[oauth_secret],
+            secrets=[oauth_secret, cache_secret],
         )
 
         container = state_in.get_container(WORKLOAD_CONTAINER)
@@ -167,24 +276,22 @@ class TestPebbleReadyEvent:
         database_integration: testing.Relation,
         oauth_integration: testing.Relation,
         receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
         oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
         mocked_migration_needed: MagicMock,
     ) -> None:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
             can_connect=True,
-            config={
-                "cache_address": VALKEY_ADDRESS,
-                "cache_password": VALKEY_PASSWORD,
-                "cache_username": VALKEY_USERNAME,
-            },
             relations=[
                 peer_integration,
                 database_integration,
                 oauth_integration,
                 receive_ca_cert_integration,
+                cache_integration,
             ],
-            secrets=[oauth_secret],
+            secrets=[oauth_secret, cache_secret],
         )
 
         container = state_in.get_container(WORKLOAD_CONTAINER)
@@ -213,30 +320,28 @@ class TestPebbleReadyEvent:
         mocked_charm_holistic_handler.assert_called_once()
         assert state_out.workload_version == "0.2.1", "workload service version should be set"
 
-    def test_on_pebble_ready_correct_plan(
+    def test_on_pebble_ready_correct_plan_with_cache(
         self,
         peer_integration: testing.PeerRelation,
         database_integration: testing.Relation,
         oauth_integration: testing.Relation,
         receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
         oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
         mocked_migration_needed: MagicMock,
     ) -> None:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
             can_connect=True,
-            config={
-                "cache_address": VALKEY_ADDRESS,
-                "cache_password": VALKEY_PASSWORD,
-                "cache_username": VALKEY_USERNAME,
-            },
             relations=[
                 peer_integration,
                 database_integration,
                 oauth_integration,
                 receive_ca_cert_integration,
+                cache_integration,
             ],
-            secrets=[oauth_secret],
+            secrets=[oauth_secret, cache_secret],
         )
 
         container = state_in.get_container(WORKLOAD_CONTAINER)
@@ -255,7 +360,6 @@ class TestPebbleReadyEvent:
                     "startup": "disabled",
                     "environment": {
                         "CACHE_ADDR": VALKEY_ADDRESS,
-                        "CACHE_DB": "0",
                         "CACHE_PASSWORD": VALKEY_PASSWORD,
                         "CACHE_USERNAME": VALKEY_USERNAME,
                         "COOKIE_HASH_KEY": COOKIE_SECRET,
@@ -356,25 +460,23 @@ class TestDatabaseIntegrationEvents:
         database_integration: testing.Relation,
         oauth_integration: testing.Relation,
         receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
         oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
         mocked_migration_needed: MagicMock,
     ) -> None:
         mocked_migration_needed.return_value = True
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
             can_connect=True,
-            config={
-                "cache_address": VALKEY_ADDRESS,
-                "cache_password": VALKEY_PASSWORD,
-                "cache_username": VALKEY_USERNAME,
-            },
             relations=[
                 peer_integration,
                 database_integration,
                 oauth_integration,
                 receive_ca_cert_integration,
+                cache_integration,
             ],
-            secrets=[oauth_secret],
+            secrets=[oauth_secret, cache_secret],
             leader=False,
         )
 
@@ -450,23 +552,21 @@ class TestOAuthIntegrationEvents:
         oauth_integration: testing.Relation,
         database_integration: testing.Relation,
         receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
         oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
         mocked_migration_needed: MagicMock,
     ) -> None:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
-            config={
-                "cache_address": VALKEY_ADDRESS,
-                "cache_password": VALKEY_PASSWORD,
-                "cache_username": VALKEY_USERNAME,
-            },
             relations=[
                 peer_integration,
                 oauth_integration,
                 database_integration,
                 receive_ca_cert_integration,
+                cache_integration,
             ],
-            secrets=[oauth_secret],
+            secrets=[oauth_secret, cache_secret],
         )
 
         state_out = ctx.run(ctx.on.relation_changed(oauth_integration), state_in)
@@ -528,6 +628,67 @@ class TestIstioIngressIntegration:
         mocked_update_client_config.assert_called_once()
 
 
+class TestCacheIntegrationEvents:
+    def test_cache_resource_created_event_triggers_holistic_handler(
+        self,
+        cache_integration: testing.Relation,
+        cache_secret: testing.Secret,
+        mocked_charm_holistic_handler: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            relations=[cache_integration],
+            secrets=[cache_secret],
+        )
+
+        ctx.run(
+            ctx.on.custom(
+                ResourceRequirerEventHandler.on.resource_created,
+                cache_integration,
+                None,
+                None,
+                ValkeyResponseModel(),
+            ),
+            state_in,
+        )
+
+        mocked_charm_holistic_handler.assert_called_once()
+
+    def test_cache_relation_broken_triggers_holistic_handler(
+        self,
+        cache_integration: testing.Relation,
+        mocked_charm_holistic_handler: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(can_connect=True, relations=[cache_integration])
+
+        ctx.run(ctx.on.relation_broken(cache_integration), state_in)
+
+        mocked_charm_holistic_handler.assert_called_once()
+
+    def test_cache_relation_status_events_observed(self) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(can_connect=True)
+        with ctx(ctx.on.start(), state_in) as mgr:
+            charm = mgr.charm
+            observed_events = [obs[3] for obs in charm.framework._observers]
+            assert "status_raised" in observed_events
+            assert "status_resolved" in observed_events
+
+    def test_cache_relation_event_triggers_holistic_handler(
+        self,
+        mocked_charm_holistic_handler: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(can_connect=True)
+        with ctx(ctx.on.start(), state_in) as mgr:
+            charm = mgr.charm
+            mock_event = MagicMock()
+            charm._on_cache_relation_event(mock_event)
+            mocked_charm_holistic_handler.assert_called_with(mock_event)
+
+
 class TestStsInfoIntegration:
     def test_sts_info_ready_populates_relation_databag(
         self,
@@ -536,21 +697,23 @@ class TestStsInfoIntegration:
         oauth_integration: testing.Relation,
         oauth_secret: testing.Secret,
         receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        cache_secret: testing.Secret,
         sts_info_integration: testing.Relation,
         mocked_migration_needed: MagicMock,
     ) -> None:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
             leader=True,
-            config={"cache_address": VALKEY_ADDRESS, "cache_password": VALKEY_PASSWORD},
             relations=[
                 peer_integration,
                 database_integration,
                 oauth_integration,
                 receive_ca_cert_integration,
+                cache_integration,
                 sts_info_integration,
             ],
-            secrets=[oauth_secret],
+            secrets=[oauth_secret, cache_secret],
         )
 
         state_out = ctx.run(ctx.on.relation_created(sts_info_integration), state_in)
@@ -574,21 +737,23 @@ class TestStsInfoIntegration:
         oauth_integration: testing.Relation,
         oauth_secret: testing.Secret,
         receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        cache_secret: testing.Secret,
         sts_info_integration: testing.Relation,
         mocked_migration_needed: MagicMock,
     ) -> None:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
             leader=False,
-            config={"cache_address": VALKEY_ADDRESS, "cache_password": VALKEY_PASSWORD},
             relations=[
                 peer_integration,
                 database_integration,
                 oauth_integration,
                 receive_ca_cert_integration,
+                cache_integration,
                 sts_info_integration,
             ],
-            secrets=[oauth_secret],
+            secrets=[oauth_secret, cache_secret],
         )
 
         state_out = ctx.run(ctx.on.relation_created(sts_info_integration), state_in)
@@ -603,6 +768,8 @@ class TestStsInfoIntegration:
         oauth_integration: testing.Relation,
         oauth_secret: testing.Secret,
         receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        cache_secret: testing.Secret,
         ingress_integration: testing.Relation,
         sts_info_integration: testing.Relation,
         mocked_submit_routes: MagicMock,
@@ -612,16 +779,16 @@ class TestStsInfoIntegration:
         ctx = testing.Context(SecureTokenServiceCharm)
         state_in = create_state(
             leader=True,
-            config={"cache_address": VALKEY_ADDRESS, "cache_password": VALKEY_PASSWORD},
             relations=[
                 peer_integration,
                 database_integration,
                 oauth_integration,
                 receive_ca_cert_integration,
+                cache_integration,
                 ingress_integration,
                 sts_info_integration,
             ],
-            secrets=[oauth_secret],
+            secrets=[oauth_secret, cache_secret],
         )
 
         state_out = ctx.run(ctx.on.relation_changed(ingress_integration), state_in)

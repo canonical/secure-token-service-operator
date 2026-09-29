@@ -16,10 +16,6 @@ class TestCharmConfig:
             "http_proxy": "http://squid.internal:3128",
             "https_proxy": "http://squid.internal:3128",
             "no_proxy": "localhost,127.0.0.1,.svc.cluster.local",
-            "cache_address": "valkey:6379",
-            "cache_password": "super-secret-password",
-            "cache_username": "user",
-            "cache_db": 1,
         }
 
         mocked_config.__getitem__.side_effect = lambda key: mocked_charm_data[key]
@@ -32,8 +28,4 @@ class TestCharmConfig:
             "HTTP_PROXY": "http://squid.internal:3128",
             "HTTPS_PROXY": "http://squid.internal:3128",
             "NO_PROXY": "localhost,127.0.0.1,.svc.cluster.local",
-            "CACHE_ADDR": "valkey:6379",
-            "CACHE_PASSWORD": "super-secret-password",
-            "CACHE_USERNAME": "user",
-            "CACHE_DB": "1",
         }

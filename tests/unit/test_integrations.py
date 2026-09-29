@@ -6,6 +6,13 @@ from unittest.mock import MagicMock, create_autospec, patch
 import pytest
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.hydra.v0.oauth import OAuthRequirer
+from dpcharmlibs.interfaces.errors import (
+    DataInterfacesError,
+    SecretError,
+    SecretsUnavailableError,
+)
+from ops import ModelError
+from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
 from constants import (
@@ -13,6 +20,7 @@ from constants import (
     POSTGRESQL_DSN_TEMPLATE,
 )
 from integrations import (
+    CacheConfig,
     DatabaseConfig,
     IstioIngressIntegration,
     OAuthConfig,
@@ -55,9 +63,7 @@ class TestPeerData:
     ) -> None:
         assert not peer_data["missing"]
 
-    def test_get_without_peer_integration(
-        self, mocked_model: MagicMock
-    ) -> None:
+    def test_get_without_peer_integration(self, mocked_model: MagicMock) -> None:
         mocked_model.get_relation.return_value = None
         peer_data = PeerData(mocked_model)
         assert not peer_data["key"]
@@ -143,6 +149,126 @@ class TestDatabaseConfig:
 
         actual = DatabaseConfig.load(mocked_requirer)
         assert actual == DatabaseConfig()
+
+
+class TestCacheConfig:
+    @pytest.fixture
+    def cache_config(self) -> CacheConfig:
+        return CacheConfig(
+            endpoint="valkey.internal:6379",
+            username="sts_cache_user",
+            password="sts_cache_password",
+        )
+
+    @pytest.fixture
+    def mocked_requirer(self) -> MagicMock:
+        return MagicMock()
+
+    def test_to_env_vars(self, cache_config: CacheConfig) -> None:
+        env_vars = cache_config.to_env_vars()
+        assert env_vars == {
+            "CACHE_ADDR": "valkey.internal:6379",
+            "CACHE_USERNAME": "sts_cache_user",
+            "CACHE_PASSWORD": "sts_cache_password",
+        }
+
+    def test_to_env_vars_empty(self) -> None:
+        cache_config = CacheConfig()
+        assert cache_config.to_env_vars() == {}
+
+    def test_load_without_integration(self, mocked_requirer: MagicMock) -> None:
+        mocked_requirer.relations = []
+
+        actual = CacheConfig.load(mocked_requirer)
+        assert actual == CacheConfig()
+
+    def test_load_when_no_relation_app(self, mocked_requirer: MagicMock) -> None:
+        mocked_relation = MagicMock(id=1, app=None)
+        mocked_requirer.relations = [mocked_relation]
+
+        actual = CacheConfig.load(mocked_requirer)
+        assert actual == CacheConfig()
+
+    def test_load_when_no_requests(self, mocked_requirer: MagicMock) -> None:
+        mocked_relation = MagicMock(id=1, app=MagicMock())
+        mocked_requirer.relations = [mocked_relation]
+        mock_model = MagicMock()
+        mock_model.requests = []
+        mocked_requirer.interface.build_model.return_value = mock_model
+
+        actual = CacheConfig.load(mocked_requirer)
+        assert actual == CacheConfig()
+
+    def test_load_when_no_endpoints(self, mocked_requirer: MagicMock) -> None:
+        mocked_relation = MagicMock(id=1, app=MagicMock())
+        mocked_requirer.relations = [mocked_relation]
+        mock_response = MagicMock()
+        mock_response.endpoints = ""
+        mock_response.password = "sts_cache_password"
+        mock_model = MagicMock()
+        mock_model.requests = [mock_response]
+        mocked_requirer.interface.build_model.return_value = mock_model
+
+        actual = CacheConfig.load(mocked_requirer)
+        assert actual == CacheConfig()
+
+    def test_load_when_no_password(self, mocked_requirer: MagicMock) -> None:
+        mocked_relation = MagicMock(id=1, app=MagicMock())
+        mocked_requirer.relations = [mocked_relation]
+        mock_response = MagicMock()
+        mock_response.endpoints = "valkey.internal:6379"
+        mock_response.password = ""
+        mock_model = MagicMock()
+        mock_model.requests = [mock_response]
+        mocked_requirer.interface.build_model.return_value = mock_model
+
+        actual = CacheConfig.load(mocked_requirer)
+        assert actual == CacheConfig()
+
+    def test_load_with_integration_ready(self, mocked_requirer: MagicMock) -> None:
+        mocked_relation = MagicMock(id=1, app=MagicMock())
+        mocked_requirer.relations = [mocked_relation]
+
+        mock_response = MagicMock()
+        mock_response.endpoints = "valkey.internal:6379,valkey-replica.internal:6379"
+        mock_response.username = "sts_cache_user"
+        mock_response.password = "sts_cache_password"
+
+        mock_model = MagicMock()
+        mock_model.requests = [mock_response]
+        mocked_requirer.interface.build_model.return_value = mock_model
+
+        actual = CacheConfig.load(mocked_requirer)
+        assert actual == CacheConfig(
+            endpoint="valkey.internal:6379",
+            username="sts_cache_user",
+            password="sts_cache_password",
+        )
+
+    @pytest.mark.parametrize(
+        "exception",
+        [
+            DataInterfacesError("Invalid databag"),
+            ValidationError.from_exception_data(title="test", line_errors=[]),
+            SecretError("Secret not ready"),
+            SecretsUnavailableError("Secrets unavailable"),
+            ModelError("Juju model error"),
+            ValueError("Missing relation"),
+        ],
+    )
+    def test_load_when_exception_raised(
+        self,
+        mocked_requirer: MagicMock,
+        exception: Exception,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        mocked_relation = MagicMock(id=1, app=MagicMock())
+        mocked_requirer.relations = [mocked_relation]
+        mocked_requirer.interface.build_model.side_effect = exception
+
+        actual = CacheConfig.load(mocked_requirer)
+        assert actual == CacheConfig()
+        assert "Failed to load cache configuration" in caplog.text
 
 
 class TestOAuthConfig:
@@ -245,4 +371,6 @@ class TestIstioIngressIntegration:
         integration.submit_routes()
 
         mocked_route_config.assert_called_once()
-        integration.requirer.submit_config.assert_called_once_with(mocked_route_config.return_value)
+        integration.requirer.submit_config.assert_called_once_with(
+            mocked_route_config.return_value
+        )
