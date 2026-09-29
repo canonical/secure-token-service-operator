@@ -24,7 +24,14 @@ from charms.istio_ingress_k8s.v0.istio_ingress_route import (
     Listener,
     ProtocolType,
 )
-from ops import CharmBase, Model
+from dpcharmlibs.interfaces import ResourceRequirerEventHandler, ValkeyResponseModel
+from dpcharmlibs.interfaces.errors import (
+    DataInterfacesError,
+    SecretError,
+    SecretsUnavailableError,
+)
+from ops import CharmBase, Model, ModelError
+from pydantic import ValidationError
 from typing_extensions import Self
 
 from constants import (
@@ -131,6 +138,61 @@ class DatabaseConfig:
             username=integration_data.get("username", ""),
             password=integration_data.get("password", ""),
             migration_version=f"migration_version_{integration_id}",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CacheConfig:
+    """The data source from the cache integration."""
+
+    endpoint: str = ""
+    username: str = ""
+    password: str = ""
+
+    def to_env_vars(self) -> EnvVars:
+        if not self.endpoint:
+            return {}
+
+        return {
+            "CACHE_ADDR": self.endpoint,
+            "CACHE_USERNAME": self.username,
+            "CACHE_PASSWORD": self.password,
+        }
+
+    @classmethod
+    def load(cls, requirer: ResourceRequirerEventHandler) -> Self:
+        if not (relations := requirer.relations):
+            return cls()
+
+        relation = relations[0]
+        if not relation.app:
+            return cls()
+
+        try:
+            model = requirer.interface.build_model(relation_id=relation.id, component=relation.app)
+        except (
+            DataInterfacesError,
+            ValidationError,
+            SecretError,
+            SecretsUnavailableError,
+            ModelError,
+            ValueError,
+        ) as err:
+            logger.warning("Failed to load cache configuration: %s", err)
+            return cls()
+
+        if not model.requests:
+            return cls()
+
+        response: ValkeyResponseModel = model.requests[0]
+        if not response.endpoints or not response.password:
+            return cls()
+
+        endpoint, *_ = response.endpoints.partition(",")
+        return cls(
+            endpoint=endpoint,
+            username=response.username or "",
+            password=response.password,
         )
 
 

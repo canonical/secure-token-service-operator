@@ -38,25 +38,10 @@ juju integrate secure-token-service:oauth hydra-k8s:oauth
 
 # Integrate with CA Provider (e.g. self-signed-certificates or lego)
 juju integrate secure-token-service:receive-ca-cert self-signed-certificates
+
+# Integrate with Cache (Valkey - mandatory)
+juju integrate secure-token-service:cache valkey-k8s:valkey-client
 ```
-
-**NOTE:** To connect Secure Token Service to cache, you need to retrieve the auto-generated operator credentials from Valkey
-and pass them to STS via juju config:
-
-1. **Retrieve the Valkey password:** Find the Juju secret that manages Valkey's internal users
-and reveal it to get the password for the `charmed-operator` user.
-
-   ```bash
-   # List secrets to find the Valkey secret (with `valkey-peers.valkey.app.internal_users_secret` label)
-   juju secrets
-
-   # Reveal the secret to get the `charmed-operator-password`
-   juju show-secret <secret-uri> --reveal
-2. Configure Cache (Valkey):
-
-    ```
-    juju config secure-token-service cache_address=<address> cache_password=<password> cache_username=<username>
-    ```
 
 ### Interacting with STS API
 
@@ -72,10 +57,7 @@ Once the service is deployed and accessible, you can interact with the STS API a
 | **log_level**      | string | `info` | Verbosity of logs. Available: `panic`, `fatal`, `error`, `warn`, `info`, `debug`, and `trace`.   |
 | **cpu**            | string | | K8s CPU resource limit (e.g., `1` or `500m`). Sets the "limits" for the container.               |
 | **memory**         | string | | K8s memory resource limit (e.g., `1Gi`). Sets the "limits" for the container.                    |
-| **cache_address**  | string | | Address of the Redis/Valkey service (e.g., `127.0.0.1:6379`) for session data storage.           |
-| **cache_password** | string | | Password for the Redis/Valkey service.                                                           |
-| **cache_username** | string | | Username for the Redis/Valkey service.                                                           |
-| **cache_db**       | int | `0` | Database number for the Redis/Valkey service.                                                    |
+
 ## Integrations
 
 | Name                | Interface | Role | Description |
@@ -85,6 +67,7 @@ Once the service is deployed and accessible, you can interact with the STS API a
 | **ingress**         | `istio_ingress_route` | Requirer | Configures external access and OIDC callback routes via Istio. |
 | **service-mesh**    | `service_mesh` | Requirer | Provides service mesh integration for internal traffic management. |
 | **receive-ca-cert** | `certificate_transfer` | Requirer | Receives trusted CA certificates to verify external OIDC providers. |
+| **cache**           | `valkey_client` | Requirer | Mandatory integration with Valkey/Redis for session and token caching. |
 
 ## Actions
 

@@ -7,6 +7,7 @@ from typing import Any, Callable, Optional, TypeVar
 from ops import CharmBase
 
 from constants import (
+    CACHE_INTEGRATION_NAME,
     DATABASE_INTEGRATION_NAME,
     OAUTH_INTEGRATION_NAME,
     PEER_INTEGRATION_NAME,
@@ -44,6 +45,7 @@ peer_integration_exists = integration_existence(PEER_INTEGRATION_NAME)
 oauth_integration_exists = integration_existence(OAUTH_INTEGRATION_NAME)
 database_integration_exists = integration_existence(DATABASE_INTEGRATION_NAME)
 receive_certs_integration_exists = integration_existence(RECEIVE_CA_CERT_INTEGRATION_NAME)
+cache_integration_exists = integration_existence(CACHE_INTEGRATION_NAME)
 
 
 def container_connectivity(charm: CharmBase) -> bool:

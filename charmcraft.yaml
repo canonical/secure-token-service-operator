@@ -60,6 +60,11 @@ requires:
     interface: certificate_transfer
     limit: 1
     optional: false
+  cache:
+    interface: valkey_client
+    limit: 1
+    optional: false
+    description: Integration with Valkey/Redis for session and token caching.
 
 config:
   options:
@@ -95,28 +100,6 @@ config:
         automatically deduced from it).
         See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
       type: string
-    cache_address:
-      description: |
-        Address of the cache (Redis/Valkey) service, for example '127.0.0.1:6379'.
-        If not set it will default to an empty string.
-        This is used to connect to the cache service and store session data.
-      type: string
-      default: ''
-    cache_username:
-      description: |
-        Username for the cache (Redis/Valkey) service, if not set it will default to an empty string.
-      type: string
-      default: ''
-    cache_password:
-      description: |
-        Password for the cache (Redis/Valkey) service, if not set it will default to an empty string.
-      type: string
-      default: ''
-    cache_db:
-      description: |
-        Database number for the cache (Redis/Valkey) service, if not set it will default to 0.
-      type: int
-      default: 0
 
 actions:
   run-migration:
