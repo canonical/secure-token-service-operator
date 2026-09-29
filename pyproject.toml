@@ -1,6 +1,59 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+[project]
+name = "secure-token-service-operator"
+version = "0.0.0"
+description = "Charmed Secure Token Service operator"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = [
+    "charmed-service-mesh-helpers>=0.2.0",
+    "httpx",
+    "jsonschema==4.26.0",
+    "lightkube-extensions",
+    "ops==3.6.0",
+    "pydantic~=2.12.0",
+    "tenacity",
+]
+
+[dependency-groups]
+fmt = [
+    "isort",
+    "ruff",
+]
+lint = [
+    "codespell",
+    "isort",
+    "ruff",
+    "tomli",
+]
+unit = [
+    "coverage[toml]",
+    "ops[testing]",
+    "pytest",
+    "pytest-mock",
+]
+integration = [
+    "jubilant",
+    "pytest",
+    "requests",
+]
+dev = [
+    "pre-commit",
+    "mypy",
+    "types-PyYAML",
+    "types-requests",
+    { include-group = "fmt" },
+    { include-group = "lint" },
+    { include-group = "unit" },
+    { include-group = "integration" },
+]
+
+[tool.uv]
+package = false
+
 # Testing tools configuration
 [tool.coverage.run]
 branch = true
@@ -103,28 +156,3 @@ module = ["ops.*", "pytest.*", "jubilant.*", "urllib3.*", "jinja2.*", "lightkube
 
 [tool.pyright]
 extraPaths = ["src", "lib"]
-
-[dependency-groups]
-fmt = ["isort", "ruff"]
-lint = ["codespell", "isort", "ruff"]
-unit = [
-    "ops[testing]",
-    "pytest",
-    "pytest-mock",
-    "coverage[toml]",
-]
-integration = [
-    "jubilant",
-    "pytest",
-    "requests",
-]
-dev = [
-    { include-group = "fmt" },
-    { include-group = "lint" },
-    { include-group = "unit" },
-    { include-group = "integration" },
-    "pre-commit",
-    "mypy",
-    "types-PyYAML",
-    "types-requests",
-]

@@ -3,11 +3,13 @@
 To make contributions to this charm, you'll need a working
 [development setup](https://documentation.ubuntu.com/juju/3.6/howto/manage-your-deployment/#set-up-your-deployment-local-testing-and-development).
 
-You can create an environment for development with `tox`:
+## Developing
+
+To set up a local development environment with all required dependencies, tools, and `pre-commit` configurations, you can use `uv`:
 
 ```shell
-tox devenv -e integration
-source venv/bin/activate
+uv sync --group dev
+source .venv/bin/activate
 ```
 
 ## Testing
