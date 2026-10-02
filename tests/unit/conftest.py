@@ -10,6 +10,7 @@ from ops import ActiveStatus, Container, Unit, testing
 from pytest_mock import MockerFixture
 
 from constants import (
+    CACHE_INTEGRATION_NAME,
     DATABASE_INTEGRATION_NAME,
     OAUTH_INTEGRATION_NAME,
     PEER_INTEGRATION_NAME,
@@ -33,6 +34,7 @@ OAUTH_PROVIDER_INFO = {
     "userinfo_endpoint": "https://example.oidc.com/userinfo",
 }
 OAUTH_SECRET_ID = "secret:hydra-test-secret-123"
+VALKEY_SECRET_ID = "secret:valkey-test-secret-123"
 VALKEY_ADDRESS = "valkey:6379"
 VALKEY_PASSWORD = "some-pwd"
 VALKEY_USERNAME = "valkey-user"
@@ -51,6 +53,11 @@ def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
         _patch=lambda *a, **kw: None,
         is_ready=lambda *a, **kw: True,
         get_status=lambda *a, **kw: ActiveStatus(),
+    )
+    mocker.patch(
+        "charms.istio_beacon_k8s.v0.service_mesh.ServiceMeshConsumer.lightkube_client",
+        new_callable=PropertyMock,
+        return_value=MagicMock(),
     )
 
 
@@ -244,4 +251,34 @@ def sts_info_integration() -> testing.Relation:
         endpoint=STS_INFO_INTEGRATION_NAME,
         interface="sts_info",
         remote_app_name="some-consumer",
+    )
+
+
+@pytest.fixture
+def cache_secret() -> testing.Secret:
+    """Creates the Secret object containing the Valkey password."""
+    return testing.Secret(
+        id=VALKEY_SECRET_ID,
+        label="valkey-credentials",
+        tracked_content={"password": VALKEY_PASSWORD, "username": VALKEY_USERNAME},
+        owner="remote",
+    )
+
+
+@pytest.fixture
+def cache_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint=CACHE_INTEGRATION_NAME,
+        interface="valkey_client",
+        remote_app_name="valkey",
+        remote_app_data={
+            "version": "v1",
+            "requests": json.dumps([
+                {
+                    "resource": "*",
+                    "endpoints": VALKEY_ADDRESS,
+                    "secret_user": VALKEY_SECRET_ID,
+                }
+            ]),
+        },
     )

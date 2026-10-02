@@ -19,8 +19,4 @@ class CharmConfig:
             "HTTP_PROXY": self._config["http_proxy"],
             "HTTPS_PROXY": self._config["https_proxy"],
             "NO_PROXY": self._config["no_proxy"],
-            "CACHE_ADDR": self._config["cache_address"],
-            "CACHE_USERNAME": self._config["cache_username"],
-            "CACHE_PASSWORD": self._config["cache_password"],
-            "CACHE_DB": str(self._config["cache_db"]),
         }

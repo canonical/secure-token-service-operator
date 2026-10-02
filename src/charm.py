@@ -2,7 +2,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charmed Secure Token Service (STS Janus) Operator."""
+"""Charmed Secure Token Service Operator."""
 
 import logging
 from typing import Any
@@ -26,6 +26,17 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     adjust_resource_requirements,
 )
 from charms.secure_token_service.v0.sts_info import StsInfoProvider, StsInfoRelationReadyEvent
+from dpcharmlibs.interfaces import (
+    RequirerCommonModel,
+    ResourceRequirerEvent,
+    ResourceRequirerEventHandler,
+    ValkeyResponseModel,
+)
+from dpcharmlibs.interfaces.errors import (
+    DataInterfacesError,
+    SecretError,
+    SecretsUnavailableError,
+)
 from ops import (
     ActionEvent,
     ActiveStatus,
@@ -34,6 +45,7 @@ from ops import (
     ConfigChangedEvent,
     HookEvent,
     MaintenanceStatus,
+    ModelError,
     PebbleReadyEvent,
     RelationBrokenEvent,
     StartEvent,
@@ -42,10 +54,12 @@ from ops import (
     main,
 )
 from ops.pebble import Layer
+from pydantic import ValidationError
 
 from cli import CommandLine
 from configs import CharmConfig
 from constants import (
+    CACHE_INTEGRATION_NAME,
     DATABASE_INTEGRATION_NAME,
     ISTIO_INGRESS_INTEGRATION_NAME,
     OAUTH_GRANT_TYPES,
@@ -61,6 +75,7 @@ from constants import (
 )
 from exceptions import MigrationError, PebbleServiceError
 from integrations import (
+    CacheConfig,
     DatabaseConfig,
     IstioIngressIntegration,
     OAuthConfig,
@@ -69,6 +84,7 @@ from integrations import (
 )
 from services import PebbleService, WorkloadService
 from utils import (
+    cache_integration_exists,
     container_connectivity,
     database_integration_exists,
     oauth_integration_exists,
@@ -99,7 +115,16 @@ class SecureTokenServiceCharm(CharmBase):
             database_name=f"{self.model.name}_{self.app.name}",
         )
 
-        self.istio_ingress = IstioIngressIntegration(self, relation_name=ISTIO_INGRESS_INTEGRATION_NAME)
+        self.valkey_interface = ResourceRequirerEventHandler(
+            charm=self,
+            relation_name=CACHE_INTEGRATION_NAME,
+            requests=[RequirerCommonModel(resource="*")],
+            response_model=ValkeyResponseModel,
+        )
+
+        self.istio_ingress = IstioIngressIntegration(
+            self, relation_name=ISTIO_INGRESS_INTEGRATION_NAME
+        )
 
         self.sts_info = StsInfoProvider(self, relation_name=STS_INFO_INTEGRATION_NAME)
 
@@ -117,7 +142,24 @@ class SecureTokenServiceCharm(CharmBase):
 
         self.framework.observe(self.database.on.database_created, self._on_database_created)
         self.framework.observe(self.database.on.endpoints_changed, self._on_database_changed)
-        self.framework.observe(self.on[DATABASE_INTEGRATION_NAME].relation_broken, self._on_database_relation_broken)
+        self.framework.observe(
+            self.on[DATABASE_INTEGRATION_NAME].relation_broken, self._on_database_relation_broken
+        )
+
+        for event in (
+            self.valkey_interface.on.resource_created,
+            self.valkey_interface.on.endpoints_changed,
+            self.valkey_interface.on.read_only_endpoints_changed,
+            self.valkey_interface.on.authentication_updated,
+            self.valkey_interface.on.status_raised,
+            self.valkey_interface.on.status_resolved,
+        ):
+            self.framework.observe(event, self._on_cache_relation_event)
+
+        self.framework.observe(
+            self.on[CACHE_INTEGRATION_NAME].relation_broken,
+            self._on_cache_relation_broken,
+        )
 
         self.framework.observe(self.istio_ingress.requirer.on.ready, self._on_ingress_ready)
         self.framework.observe(self.sts_info.on.sts_info_ready, self._on_sts_info_ready)
@@ -145,11 +187,13 @@ class SecureTokenServiceCharm(CharmBase):
     def _pebble_layer(self) -> Layer:
         database_config = DatabaseConfig.load(self.database)
         oauth_config = OAuthConfig.load(self.oauth, self._redirect_url)
+        cache_config = CacheConfig.load(self.valkey_interface)
         return self._pebble_service.render_pebble_layer(
             self.charm_config,
             self.peer_data,
             database_config,
             oauth_config,
+            cache_config,
         )
 
     @property
@@ -238,6 +282,12 @@ class SecureTokenServiceCharm(CharmBase):
     def _on_database_relation_broken(self, event: RelationBrokenEvent) -> None:
         self._holistic_handler(event)
 
+    def _on_cache_relation_event(self, event: ResourceRequirerEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_cache_relation_broken(self, event: RelationBrokenEvent) -> None:
+        self._holistic_handler(event)
+
     def _on_oauth_info_changed(self, event: OAuthInfoChangedEvent) -> None:
         self._holistic_handler(event)
 
@@ -312,9 +362,34 @@ class SecureTokenServiceCharm(CharmBase):
         if not receive_certs_integration_exists(self):
             return BlockedStatus(f"Missing {RECEIVE_CA_CERT_INTEGRATION_NAME} integration"), False
 
-        # TODO: Replace with valkey integration when implemented
-        if not self.config.get("cache_address") or not self.config.get("cache_password"):
-            return BlockedStatus("Missing valkey/redis configuration"), False
+        if not cache_integration_exists(self):
+            return BlockedStatus(f"Missing {CACHE_INTEGRATION_NAME} integration"), False
+
+        for rel in self.valkey_interface.relations:
+            try:
+                statuses = self.valkey_interface.get_statuses(rel.id)
+            except (
+                DataInterfacesError,
+                ValidationError,
+                SecretError,
+                SecretsUnavailableError,
+                ModelError,
+                ValueError,
+            ) as err:
+                logger.debug("Failed to get cache status for relation %s: %s", rel.id, err)
+                continue
+
+            for rel_status in statuses.values():
+                if rel_status.is_fatal:
+                    return BlockedStatus(f"Cache error: {rel_status.message}"), False
+
+            for rel_status in statuses.values():
+                if rel_status.is_transitory:
+                    return WaitingStatus(f"Cache: {rel_status.message}"), False
+
+        cache_config = CacheConfig.load(self.valkey_interface)
+        if not cache_config.endpoint or not cache_config.password:
+            return WaitingStatus("Waiting for cache creation"), False
 
         # Everything is ready
         return None, False

@@ -1,7 +1,6 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-import json
 import logging
 import os
 import secrets
@@ -14,17 +13,13 @@ import jubilant
 import pytest
 from integration.constants import (
     CA_APP,
-    CA_OFFER_NAME,
     DB_APP,
-    DB_OFFER_NAME,
     HYDRA_APP,
     HYDRA_PUBLIC_ROUTE_INTEGRATION_NAME,
     ISTIO_INGRESS_APP,
     LOGIN_UI_APP,
     LOGIN_UI_INTEGRATION_NAME,
     STS_APP,
-    TRAEFIK_OFFER_NAME,
-    TRAEFIK_PUBLIC_APP,
     VALKEY_APP,
 )
 from integration.utils import get_app_integration_data, juju_model_factory
@@ -86,38 +81,17 @@ def juju(request: pytest.FixtureRequest) -> Generator[jubilant.Juju, None, None]
     juju_ = juju_model_factory(model_name)
     juju_.wait_timeout = 15 * 60
 
-    # Create a secondary model for core infrastructure
-    core_model_name = f"{model_name}-core"
-    juju_core = juju_model_factory(core_model_name)
-
-    juju_.core_model = core_model_name
-
     try:
         yield juju_
     finally:
         if request.session.testsfailed:
             print(juju_.debug_log(limit=1000), end="")
 
-            with suppress(Exception):
-                print(juju_core.debug_log(limit=1000), end="")
-
-        # Respect teardown flags for both models
         if not (request.config.getoption("--no-teardown") or request.session.testsfailed > 0):
             with suppress(jubilant.CLIError):
                 juju_.cli(
                     "destroy-model",
                     juju_.model,
-                    "--no-prompt",
-                    "--destroy-storage",
-                    "--force",
-                    "--timeout",
-                    "600s",
-                    include_model=False,
-                )
-            with suppress(jubilant.CLIError):
-                juju_.cli(
-                    "destroy-model",
-                    core_model_name,
                     "--no-prompt",
                     "--destroy-storage",
                     "--force",
@@ -139,82 +113,26 @@ def local_charm() -> Path:
     return Path(charm)
 
 
-def get_valkey_password(juju: jubilant.Juju) -> str:
-    """Fetch the operator password from Valkey's Juju secrets."""
-    secret_label = f"{VALKEY_APP}-peers.{VALKEY_APP}.app.internal_users_secret"
-
-    try:
-        stdout = juju.cli("show-secret", secret_label, "--reveal", "--format=json")
-        secret_data = json.loads(stdout)
-
-        secret_id = list(secret_data.keys())[0]
-        content = secret_data[secret_id].get("content", {})
-
-        operator_password = content.get("Data", {}).get("charmed-operator-password")
-
-        if not operator_password:
-            raise RuntimeError("charmed-operator-password not found in the secret content")
-
-        return operator_password
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to retrieve valkey operator password from secret: {e}")
-
-
-def integrate_core_dependencies(juju: jubilant.Juju) -> None:
-    """Integrate infrastructure components within the core model."""
-    juju.integrate(f"{TRAEFIK_PUBLIC_APP}:certificates", f"{CA_APP}:certificates")
-
-
 def integrate_hydra_dependencies(juju: jubilant.Juju) -> None:
-    """Integrate Hydra and its dependencies using local apps and consumed offers."""
-    juju.integrate(f"{LOGIN_UI_APP}:public-route", TRAEFIK_OFFER_NAME)
-    juju.integrate(f"{HYDRA_APP}:{HYDRA_PUBLIC_ROUTE_INTEGRATION_NAME}", TRAEFIK_OFFER_NAME)
-    juju.integrate(HYDRA_APP, DB_OFFER_NAME)
+    """Integrate Hydra and its dependencies."""
+    juju.integrate(f"{LOGIN_UI_APP}:public-route", f"{ISTIO_INGRESS_APP}:istio-ingress-route")
+    juju.integrate(
+        f"{HYDRA_APP}:{HYDRA_PUBLIC_ROUTE_INTEGRATION_NAME}",
+        f"{ISTIO_INGRESS_APP}:istio-ingress-route",
+    )
+    juju.integrate(HYDRA_APP, DB_APP)
     juju.integrate(
         f"{HYDRA_APP}:{LOGIN_UI_INTEGRATION_NAME}", f"{LOGIN_UI_APP}:{LOGIN_UI_INTEGRATION_NAME}"
     )
 
 
 def integrate_sts_dependencies(juju: jubilant.Juju) -> None:
-    """Integrate STS with its core dependencies using local apps and consumed offers."""
+    """Integrate STS with its core dependencies."""
     juju.integrate(f"{STS_APP}:oauth", f"{HYDRA_APP}:oauth")
-    juju.integrate(f"{STS_APP}:pg-database", DB_OFFER_NAME)
-    juju.integrate(f"{STS_APP}:receive-ca-cert", CA_OFFER_NAME)
-
-
-def integrate_istio_dependencies(juju: jubilant.Juju) -> None:
-    """Integrate STS with Istio Ingress Route."""
+    juju.integrate(f"{STS_APP}:pg-database", DB_APP)
+    juju.integrate(f"{STS_APP}:receive-ca-cert", f"{CA_APP}:send-ca-cert")
     juju.integrate(STS_APP, f"{ISTIO_INGRESS_APP}:istio-ingress-route")
-
-
-def offer_core_endpoints(juju: jubilant.Juju) -> None:
-    """Create Juju offers for the core infrastructure endpoints."""
-    core_model = juju.core_model
-    logger.info("Offering core endpoints via CLI")
-
-    endpoints = [
-        (TRAEFIK_PUBLIC_APP, TRAEFIK_OFFER_NAME),
-        (DB_APP, DB_OFFER_NAME),
-        (CA_APP, CA_OFFER_NAME),
-    ]
-
-    for app, offer in endpoints:
-        juju.cli("offer", f"{core_model}.{app}:{offer}", offer, include_model=False)
-
-
-def consume_core_offers(juju: jubilant.Juju) -> None:
-    """Consume the core infrastructure offers."""
-    core_model = juju.core_model
-    logger.info("Consuming core offers in primary model")
-
-    offers = [
-        TRAEFIK_OFFER_NAME,
-        DB_OFFER_NAME,
-        CA_OFFER_NAME,
-    ]
-    for offer in offers:
-        juju.cli("consume", f"admin/{core_model}.{offer}")
+    juju.integrate(f"{STS_APP}:cache", f"{VALKEY_APP}:valkey-client")
 
 
 @pytest.fixture

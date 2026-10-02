@@ -33,3 +33,5 @@ RECEIVE_CA_CERT_INTEGRATION_NAME = "receive-ca-cert"
 CERTIFICATES_PATH = Path("/etc/ssl/certs")
 CERTIFICATES_FILE = Path(CERTIFICATES_PATH / "ca-certificates.crt")
 LOCAL_CA_BUNDLE_PATH = Path("/usr/local/share/ca-certificates/ca-certificates.crt")
+
+CACHE_INTEGRATION_NAME = "cache"
