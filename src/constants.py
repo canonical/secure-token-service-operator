@@ -22,6 +22,7 @@ DATABASE_INTEGRATION_NAME = "pg-database"
 POSTGRESQL_DSN_TEMPLATE = Template("postgres://$username:$password@$endpoint/$database")
 
 INGRESS_HTTP_PORT = 80
+INGRESS_HTTPS_PORT = 443
 ISTIO_INGRESS_INTEGRATION_NAME = "ingress"
 STS_INFO_INTEGRATION_NAME = "sts-info"
 

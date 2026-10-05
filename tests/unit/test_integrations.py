@@ -4,6 +4,7 @@
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
+from charmlibs.interfaces.istio_ingress_route import ProtocolType
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.hydra.v0.oauth import OAuthRequirer
 from dpcharmlibs.interfaces.errors import (
@@ -364,13 +365,39 @@ class TestIstioIngressIntegration:
         assert integration.external_url is None
 
     @patch("integrations.IstioIngressRouteConfig")
-    def test_submit_routes(self, mocked_route_config: MagicMock, mocked_charm: MagicMock) -> None:
+    def test_submit_routes_tls_enabled(
+        self, mocked_route_config: MagicMock, mocked_charm: MagicMock
+    ) -> None:
         integration = IstioIngressIntegration(mocked_charm, relation_name="ingress")
         integration.requirer = MagicMock()
+        integration.requirer.tls_enabled = True
 
         integration.submit_routes()
 
         mocked_route_config.assert_called_once()
+        listeners = mocked_route_config.call_args.kwargs["listeners"]
+        assert len(listeners) == 1
+        assert listeners[0].port == 443
+        assert listeners[0].protocol == ProtocolType.HTTP
+        integration.requirer.submit_config.assert_called_once_with(
+            mocked_route_config.return_value
+        )
+
+    @patch("integrations.IstioIngressRouteConfig")
+    def test_submit_routes_tls_disabled(
+        self, mocked_route_config: MagicMock, mocked_charm: MagicMock
+    ) -> None:
+        integration = IstioIngressIntegration(mocked_charm, relation_name="ingress")
+        integration.requirer = MagicMock()
+        integration.requirer.tls_enabled = False
+
+        integration.submit_routes()
+
+        mocked_route_config.assert_called_once()
+        listeners = mocked_route_config.call_args.kwargs["listeners"]
+        assert len(listeners) == 1
+        assert listeners[0].port == 80
+        assert listeners[0].protocol == ProtocolType.HTTP
         integration.requirer.submit_config.assert_called_once_with(
             mocked_route_config.return_value
         )

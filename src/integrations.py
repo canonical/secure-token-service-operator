@@ -8,12 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any, KeysView, Type, TypeAlias, Union
 
-from charms.certificate_transfer_interface.v1.certificate_transfer import (
-    CertificateTransferRequires,
-)
-from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
-from charms.hydra.v0.oauth import OAuthRequirer
-from charms.istio_ingress_k8s.v0.istio_ingress_route import (
+from charmlibs.interfaces.istio_ingress_route import (
     BackendRef,
     HTTPPathMatch,
     HTTPPathMatchType,
@@ -24,6 +19,11 @@ from charms.istio_ingress_k8s.v0.istio_ingress_route import (
     Listener,
     ProtocolType,
 )
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificateTransferRequires,
+)
+from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+from charms.hydra.v0.oauth import OAuthRequirer
 from dpcharmlibs.interfaces import ResourceRequirerEventHandler, ValkeyResponseModel
 from dpcharmlibs.interfaces.errors import (
     DataInterfacesError,
@@ -38,6 +38,7 @@ from constants import (
     CERTIFICATES_FILE,
     COOKIE_SECRET_KEY,
     INGRESS_HTTP_PORT,
+    INGRESS_HTTPS_PORT,
     LOCAL_CA_BUNDLE_PATH,
     PEER_INTEGRATION_NAME,
     POSTGRESQL_DSN_TEMPLATE,
@@ -278,7 +279,8 @@ class IstioIngressIntegration:
 
     def submit_routes(self) -> None:
         """Compiles and submits HTTP Routes to the Istio Ingress Gateway."""
-        http_listener = Listener(port=INGRESS_HTTP_PORT, protocol=ProtocolType.HTTP)
+        ingress_port = INGRESS_HTTPS_PORT if self.requirer.tls_enabled else INGRESS_HTTP_PORT
+        http_listener = Listener(port=ingress_port, protocol=ProtocolType.HTTP)
         config = IstioIngressRouteConfig(
             model=self.model_name,
             listeners=[http_listener],

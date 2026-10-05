@@ -10,6 +10,7 @@ license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
     "charmed-service-mesh-helpers>=0.2.0",
+    "charmlibs-interfaces-istio-ingress-route==1.0.2",
     "dpcharmlibs-interfaces==1.2.2",
     "httpx",
     "jsonschema==4.26.0",

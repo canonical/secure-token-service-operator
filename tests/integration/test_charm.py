@@ -69,12 +69,7 @@ def test_build_and_deploy_hydra_core_deps(juju: jubilant.Juju) -> None:
     juju.integrate(f"{ISTIO_INGRESS_APP}:certificates", f"{CA_APP}:certificates")
 
     juju.deploy(LOGIN_UI_APP, channel="istio/edge", trust=True)
-    juju.deploy(
-        HYDRA_APP,
-        channel="istio/edge",
-        config={"dev": True},
-        trust=True
-    )
+    juju.deploy(HYDRA_APP, channel="istio/edge", config={"dev": True}, trust=True)
 
     logger.info("Integrating Hydra and Login UI")
     integrate_hydra_dependencies(juju)
@@ -146,12 +141,12 @@ def test_ingress_routing_and_redirect(juju) -> None:
     except Exception as e:
         pytest.fail(str(e))
 
-    login_url = f"http://{ingress_ip}/auth/login"
+    login_url = f"https://{ingress_ip}/auth/login"
     logger.info(f"Testing login endpoint access at {login_url}")
 
-    # allow_redirects=False ensures we capture the 302/303 response from STS
+    # allow_redirects=False ensures we capture the 302/303 response from STS (redirection to Hydra)
     try:
-        response = requests.get(login_url, allow_redirects=False)
+        response = requests.get(login_url, allow_redirects=False, verify=False)
     except requests.RequestException as e:
         pytest.fail(f"Failed to connect to Istio Ingress at {login_url}: {e}")
 
