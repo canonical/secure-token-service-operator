@@ -38,6 +38,7 @@ from constants import (
     CERTIFICATES_FILE,
     COOKIE_SECRET_KEY,
     INGRESS_HTTP_PORT,
+    INGRESS_HTTPS_PORT,
     LOCAL_CA_BUNDLE_PATH,
     PEER_INTEGRATION_NAME,
     POSTGRESQL_DSN_TEMPLATE,
@@ -278,7 +279,8 @@ class IstioIngressIntegration:
 
     def submit_routes(self) -> None:
         """Compiles and submits HTTP Routes to the Istio Ingress Gateway."""
-        http_listener = Listener(port=INGRESS_HTTP_PORT, protocol=ProtocolType.HTTP)
+        ingress_port = INGRESS_HTTPS_PORT if self.requirer.tls_enabled else INGRESS_HTTP_PORT
+        http_listener = Listener(port=ingress_port, protocol=ProtocolType.HTTP)
         config = IstioIngressRouteConfig(
             model=self.model_name,
             listeners=[http_listener],
