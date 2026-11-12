@@ -88,7 +88,7 @@ config:
       default: "info"
     default_auth_provider:
       description: |
-        The default authentication provider used when GET /login is called without
+        The default authentication provider used when GET /auth/login is called without
         a ?provider= parameter. Valid values are "oidc" and "openid".
         Any other value puts the unit in blocked status.
       type: string

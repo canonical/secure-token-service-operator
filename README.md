@@ -55,8 +55,24 @@ Once the service is deployed and accessible, you can interact with the STS API a
 | **https_proxy**    | string | | URL of the HTTPS proxy (e.g., `http://proxy.internal:6666`). Sets `HTTPS_PROXY` in the workload. |
 | **no_proxy**       | string | | Comma-separated list of domains to exclude from proxying (e.g., `test.com,test.co.uk`).          |
 | **log_level**      | string | `info` | Verbosity of logs. Available: `panic`, `fatal`, `error`, `warn`, `info`, `debug`, and `trace`.   |
+| **default_auth_provider** | string | `oidc` | Default authentication provider when `/auth/login` has no `?provider=` parameter. Valid: `oidc`, `openid`. |
+| **ubuntu_one_openid_url** | string | `https://login.ubuntu.com/+openid` | Ubuntu One OpenID 2.0 endpoint used by the `openid` provider. |
+| **ubuntu_one_realm** | string | | OpenID realm/return_to base URL. Required when `default_auth_provider=openid` unless derivable from the `ingress` integration external URL. |
 | **cpu**            | string | | K8s CPU resource limit (e.g., `1` or `500m`). Sets the "limits" for the container.               |
 | **memory**         | string | | K8s memory resource limit (e.g., `1Gi`). Sets the "limits" for the container.                    |
+
+### Ubuntu One OpenID login
+
+The workload supports Ubuntu One OpenID 2.0 logins alongside the default OIDC flow:
+
+```shell
+juju config secure-token-service default_auth_provider=openid
+```
+
+When `ubuntu_one_realm` is left unset, the charm derives the realm from the `ingress`
+integration's external URL. If neither a realm nor an ingress is available, the unit
+enters blocked status explaining that `ubuntu_one_realm` or an ingress is required.
+Switching back to `default_auth_provider=oidc` never requires a realm.
 
 ## Integrations
 
