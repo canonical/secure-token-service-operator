@@ -32,6 +32,17 @@ The charm's `_on_ingress_ready` handler SHALL call `update_relations_app_data()`
 - **WHEN** the `ingress_ready` event fires with a new external URL
 - **THEN** all active `sts-info` relation databags SHALL be updated with the new `http_address` and `jwks_url`
 
+### Requirement: Every unit reconciles on ingress relation changes
+The charm SHALL observe the `ingress` relation's `relation_changed` and `relation_broken` events directly rather than relying solely on the requirer's `ready` event, which `IstioIngressRouteRequirer` emits on the leader unit only. Every unit, leader or follower, SHALL re-run its holistic reconciliation when the ingress relation changes or is removed. Route submission and OAuth client config updates SHALL remain leader-only.
+
+#### Scenario: Follower unit reconciles when the external host is published late
+- **WHEN** `default_auth_provider=openid`, `ubuntu_one_realm` is unset, and a follower unit is waiting for the ingress to publish its external URL
+- **THEN** the follower unit re-evaluates on `relation_changed` and transitions to `ActiveStatus` with `UBUNTU_ONE_REALM` derived from the external URL
+
+#### Scenario: Follower unit reconciles when the ingress relation is removed
+- **WHEN** `default_auth_provider=openid`, `ubuntu_one_realm` is unset, and the `ingress` relation is removed
+- **THEN** the follower unit enters `BlockedStatus` explaining that `ubuntu_one_realm` or an ingress integration is required
+
 ### Requirement: grpc_address is always the k8s svc address at port 9090
 The gRPC address SHALL always be `<app-name>.<model-name>.svc.cluster.local:9090` regardless of ingress configuration.
 

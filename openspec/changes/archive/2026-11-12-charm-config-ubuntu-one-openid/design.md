@@ -73,6 +73,6 @@ def to_env_vars(self, realm: str | None = None) -> EnvVars:
 
 ### 8. Edge Cases Handled
 1. **Provider switching**: Validation runs on each config-changed event
-2. **Ingress relation added/removed**: `_holistic_handler()` re-evaluates
+2. **Ingress relation added/removed**: `_holistic_handler()` re-evaluates on every unit. The charm observes the `ingress` relation's `relation_changed`/`relation_broken` events directly, because the requirer's `ready` event is emitted on the leader unit only; route submission and OAuth client config updates stay leader-gated
 3. **Config update order**: Provider changed before ingress ready → blocked
 4. **Realm explicitly set**: Use provided realm even if ingress exists
