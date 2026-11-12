@@ -86,6 +86,28 @@ config:
         Available values are: panic, fatal, error, warn, info, debug, and trace.
       type: string
       default: "info"
+    default_auth_provider:
+      description: |
+        The default authentication provider used when GET /login is called without
+        a ?provider= parameter. Valid values are "oidc" and "openid".
+        Any other value puts the unit in blocked status.
+      type: string
+      default: "oidc"
+    ubuntu_one_openid_url:
+      description: |
+        The Ubuntu One OpenID 2.0 endpoint used when the "openid" provider is selected.
+      type: string
+      default: "https://login.ubuntu.com/+openid"
+    ubuntu_one_realm:
+      description: |
+        The OpenID realm / return_to base URL. It must match the publicly reachable
+        base URL of the service (e.g. the ingress hostname), otherwise OpenID
+        verification fails. When unset and default_auth_provider is "openid", the
+        charm derives the realm from the ingress integration external URL; if no
+        realm can be resolved the unit enters blocked status. Not required when
+        default_auth_provider is "oidc".
+      type: string
+      default: ""
     cpu:
       description: |
         K8s cpu resource limit, e.g. "1" or "500m". Default is unset (no limit). This value is used
