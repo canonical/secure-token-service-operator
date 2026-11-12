@@ -42,6 +42,7 @@ from src.constants import (
     OAUTH_INTEGRATION_NAME,
     PEER_INTEGRATION_NAME,
     RECEIVE_CA_CERT_INTEGRATION_NAME,
+    WORKLOAD_CONTAINER,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,35 @@ def test_ingress_routing_and_redirect(juju) -> None:
     assert response.status_code in (302, 303), (
         f"Expected redirect, got {response.status_code}. Response body: {response.text}"
     )
+
+
+def test_openid_provider_config_env_vars(juju: jubilant.Juju) -> None:
+    """Configuring the openid provider propagates the env vars to the workload."""
+    juju.config(
+        STS_APP,
+        {
+            "default_auth_provider": "openid",
+            "ubuntu_one_realm": "https://sts.example.com",
+        },
+    )
+    juju.wait(ready=all_active(STS_APP), timeout=10 * 60)
+
+    plan = juju.cli(
+        "exec",
+        "--unit",
+        f"{STS_APP}/0",
+        "--container",
+        WORKLOAD_CONTAINER,
+        "--",
+        "pebble",
+        "plan",
+    )
+
+    assert "DEFAULT_AUTH_PROVIDER: openid" in plan
+    assert "UBUNTU_ONE_REALM: https://sts.example.com" in plan
+
+    juju.config(STS_APP, reset=["default_auth_provider", "ubuntu_one_realm"])
+    juju.wait(ready=all_active(STS_APP), timeout=10 * 60)
 
 
 def test_sts_scale_up(
