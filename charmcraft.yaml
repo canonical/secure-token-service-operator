@@ -21,7 +21,7 @@ resources:
   oci-image:
     type: oci-image
     description: Secure Token Service oci-image
-    upstream-source: ghcr.io/canonical/secure-token-service:v0.5.0
+    upstream-source: ghcr.io/canonical/secure-token-service:v0.7.0
 
 peers:
   peer:
