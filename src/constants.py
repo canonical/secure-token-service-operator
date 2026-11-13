@@ -26,6 +26,11 @@ INGRESS_HTTPS_PORT = 443
 ISTIO_INGRESS_INTEGRATION_NAME = "ingress"
 STS_INFO_INTEGRATION_NAME = "sts-info"
 
+# Auth provider constants
+OIDC_PROVIDER = "oidc"
+OPENID_PROVIDER = "openid"
+VALID_AUTH_PROVIDERS = (OIDC_PROVIDER, OPENID_PROVIDER)
+
 OAUTH_INTEGRATION_NAME = "oauth"
 OAUTH_SCOPES = "openid email profile offline_access"
 OAUTH_GRANT_TYPES = ["authorization_code", "refresh_token"]

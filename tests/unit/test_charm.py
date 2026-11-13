@@ -364,6 +364,7 @@ class TestPebbleReadyEvent:
                         "CACHE_USERNAME": VALKEY_USERNAME,
                         "COOKIE_HASH_KEY": COOKIE_SECRET,
                         "DATABASE_URL": "postgres://sts_user:sts_password@pg.internal:5432/testing_secure-token-service",
+                        "DEFAULT_AUTH_PROVIDER": "oidc",
                         "HTTPS_PROXY": "",
                         "HTTP_PROXY": "",
                         "LOG_FORMAT": "json",
@@ -373,6 +374,7 @@ class TestPebbleReadyEvent:
                         "OIDC_CLIENT_SECRET": OAUTH_CLIENT_SECRET,
                         "OIDC_PROVIDER_URL": OAUTH_PROVIDER_INFO["issuer_url"],
                         "OIDC_REDIRECT_URL": "http://secure-token-service.testing.svc.cluster.local:8080/auth/callback",
+                        "UBUNTU_ONE_OPENID_URL": "https://login.ubuntu.com/+openid",
                     },
                 },
             },
@@ -404,6 +406,163 @@ class TestConfigChangedEvent:
         ctx.run(ctx.on.config_changed(), state_in)
 
         mocked_charm_holistic_handler.assert_called_once()
+
+
+class TestAuthProviderConfig:
+    @staticmethod
+    def ingress_with_host(host: str = "sts.example.com") -> testing.Relation:
+        return testing.Relation(
+            endpoint="ingress",
+            interface="istio_ingress_route",
+            remote_app_name="istio-ingress-k8s",
+            remote_app_data={"external_host": host, "tls_enabled": "True"},
+        )
+
+    def test_invalid_provider_is_blocked(self) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"default_auth_provider": "saml"},
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            "Invalid default_auth_provider 'saml': must be one of oidc, openid"
+        )
+
+    def test_openid_without_realm_or_ingress_is_blocked(self) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"default_auth_provider": "openid"},
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            "OpenID provider requires the 'ubuntu_one_realm' config "
+            "or an ingress integration to derive the OpenID realm"
+        )
+
+    def test_openid_waits_for_ingress_external_url(
+        self,
+        ingress_integration: testing.Relation,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"default_auth_provider": "openid"},
+            relations=[ingress_integration],
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.unit_status == testing.WaitingStatus(
+            "Waiting for ingress to provide an external URL"
+        )
+
+    def test_openid_realm_derived_from_ingress(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"default_auth_provider": "openid"},
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_integration,
+                self.ingress_with_host(),
+            ],
+            secrets=[oauth_secret, cache_secret],
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, testing.ActiveStatus)
+        layer = state_out.get_container(WORKLOAD_CONTAINER).layers[WORKLOAD_CONTAINER]
+        env = layer.services[WORKLOAD_CONTAINER].environment
+        assert env["DEFAULT_AUTH_PROVIDER"] == "openid"
+        assert env["UBUNTU_ONE_REALM"] == "https://sts.example.com"
+
+    def test_openid_with_explicit_realm_needs_no_ingress(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={
+                "default_auth_provider": "openid",
+                "ubuntu_one_realm": "https://sts.example.com",
+            },
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_integration,
+            ],
+            secrets=[oauth_secret, cache_secret],
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, testing.ActiveStatus)
+        layer = state_out.get_container(WORKLOAD_CONTAINER).layers[WORKLOAD_CONTAINER]
+        env = layer.services[WORKLOAD_CONTAINER].environment
+        assert env["UBUNTU_ONE_REALM"] == "https://sts.example.com"
+
+    def test_oidc_never_derives_realm(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_integration,
+                self.ingress_with_host(),
+            ],
+            secrets=[oauth_secret, cache_secret],
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, testing.ActiveStatus)
+        layer = state_out.get_container(WORKLOAD_CONTAINER).layers[WORKLOAD_CONTAINER]
+        env = layer.services[WORKLOAD_CONTAINER].environment
+        assert env["DEFAULT_AUTH_PROVIDER"] == "oidc"
+        assert "UBUNTU_ONE_REALM" not in env
 
 
 class TestDatabaseIntegrationEvents:
@@ -626,6 +785,89 @@ class TestIstioIngressIntegration:
         mocked_submit_routes.assert_called_once()
         mocked_charm_holistic_handler.assert_called_once()
         mocked_update_client_config.assert_called_once()
+
+    @staticmethod
+    def ingress_with_host(host: str = "sts.example.com") -> testing.Relation:
+        return testing.Relation(
+            endpoint="ingress",
+            interface="istio_ingress_route",
+            remote_app_name="istio-ingress-k8s",
+            remote_app_data={"external_host": host, "tls_enabled": "True"},
+        )
+
+    def test_follower_reconciles_when_ingress_publishes_external_host(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+        mocked_submit_routes: MagicMock,
+        mocked_update_client_config: MagicMock,
+    ) -> None:
+        ingress_integration = self.ingress_with_host()
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"default_auth_provider": "openid"},
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_integration,
+                ingress_integration,
+            ],
+            secrets=[oauth_secret, cache_secret],
+            leader=False,
+        )
+
+        state_out = ctx.run(ctx.on.relation_changed(ingress_integration), state_in)
+
+        assert isinstance(state_out.unit_status, testing.ActiveStatus)
+        layer = state_out.get_container(WORKLOAD_CONTAINER).layers[WORKLOAD_CONTAINER]
+        env = layer.services[WORKLOAD_CONTAINER].environment
+        assert env["UBUNTU_ONE_REALM"] == "https://sts.example.com"
+        mocked_submit_routes.assert_not_called()
+        mocked_update_client_config.assert_not_called()
+
+    def test_follower_reconciles_when_ingress_relation_removed(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ingress_integration = self.ingress_with_host()
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"default_auth_provider": "openid"},
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_integration,
+                ingress_integration,
+            ],
+            secrets=[oauth_secret, cache_secret],
+            leader=False,
+        )
+
+        state_out = ctx.run(ctx.on.relation_broken(ingress_integration), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            "OpenID provider requires the 'ubuntu_one_realm' config "
+            "or an ingress integration to derive the OpenID realm"
+        )
 
 
 class TestCacheIntegrationEvents:

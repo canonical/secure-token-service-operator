@@ -65,11 +65,13 @@ from constants import (
     OAUTH_GRANT_TYPES,
     OAUTH_INTEGRATION_NAME,
     OAUTH_SCOPES,
+    OPENID_PROVIDER,
     PEER_INTEGRATION_NAME,
     RECEIVE_CA_CERT_INTEGRATION_NAME,
     STS_GRPC_PORT,
     STS_HTTP_PORT,
     STS_INFO_INTEGRATION_NAME,
+    VALID_AUTH_PROVIDERS,
     WORKLOAD_CONTAINER,
     WORKLOAD_SERVICE,
 )
@@ -107,7 +109,7 @@ class SecureTokenServiceCharm(CharmBase):
         self._cli = CommandLine(self._container)
 
         self.peer_data = PeerData(self.model)
-        self.charm_config = CharmConfig(self.config)
+        self.charm_config = CharmConfig(self.config, lambda: self.istio_ingress.external_url)
 
         self.database = DatabaseRequires(
             self,
@@ -161,7 +163,14 @@ class SecureTokenServiceCharm(CharmBase):
             self._on_cache_relation_broken,
         )
 
-        self.framework.observe(self.istio_ingress.requirer.on.ready, self._on_ingress_ready)
+        # The requirer's `ready` event is emitted on the leader unit only, so observe the
+        # raw relation events to let follower units reconcile ingress changes as well.
+        self.framework.observe(
+            self.on[ISTIO_INGRESS_INTEGRATION_NAME].relation_changed, self._on_ingress_ready
+        )
+        self.framework.observe(
+            self.on[ISTIO_INGRESS_INTEGRATION_NAME].relation_broken, self._on_ingress_ready
+        )
         self.framework.observe(self.sts_info.on.sts_info_ready, self._on_sts_info_ready)
 
         self.framework.observe(self.oauth.on.oauth_info_changed, self._on_oauth_info_changed)
@@ -338,6 +347,30 @@ class SecureTokenServiceCharm(CharmBase):
         """
         if not container_connectivity(self):
             return WaitingStatus("Container is not connected yet"), True
+
+        if self.charm_config.provider not in VALID_AUTH_PROVIDERS:
+            return (
+                BlockedStatus(
+                    f"Invalid default_auth_provider '{self.charm_config.provider}': "
+                    f"must be one of {', '.join(VALID_AUTH_PROVIDERS)}"
+                ),
+                False,
+            )
+
+        if (
+            self.charm_config.provider == OPENID_PROVIDER
+            and not self.model.config["ubuntu_one_realm"]
+        ):
+            if not self.model.relations.get(ISTIO_INGRESS_INTEGRATION_NAME):
+                return (
+                    BlockedStatus(
+                        "OpenID provider requires the 'ubuntu_one_realm' config "
+                        "or an ingress integration to derive the OpenID realm"
+                    ),
+                    False,
+                )
+            if not self.istio_ingress.external_url:
+                return WaitingStatus("Waiting for ingress to provide an external URL"), False
 
         patch_status = self.resources_patch.get_status()
         if not isinstance(patch_status, ActiveStatus):
