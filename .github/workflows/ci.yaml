@@ -29,7 +29,7 @@ jobs:
     secrets:
       GH_USERNAME: ${{ secrets.GH_USERNAME }}
       GH_PAT: ${{ secrets.GH_PAT }}
-    uses: canonical/identity-team/.github/workflows/charm-pull-request.yaml@732520bcf8f04f777f44d1c3677e7a89f7ce9ab6 # v1.11.0
+    uses: canonical/identity-team/.github/workflows/charm-pull-request.yaml@5830f3e6723de07cb5b7ccb6c84031d8b2964c62 # v1.11.4
     with:
       container-name: "secure-token-service"
       # TODO: Enable when onboarded to charmcraft cache
