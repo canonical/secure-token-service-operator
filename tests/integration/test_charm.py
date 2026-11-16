@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 def test_build_and_deploy_hydra_core_deps(juju: jubilant.Juju) -> None:
     """Deploy and integrate Hydra and core dependencies."""
     logger.info("Deploying Postgres DB and CA")
-    juju.deploy(DB_APP, channel="14/stable", trust=True)
+    juju.deploy(DB_APP, channel="14/stable", trust=True, force=True)
     juju.deploy(CA_APP, channel="1/stable", trust=True)
 
     logger.info("Deploying Istio, Hydra, and Login UI")
