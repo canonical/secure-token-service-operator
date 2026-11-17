@@ -58,6 +58,7 @@ Once the service is deployed and accessible, you can interact with the STS API a
 | **default_auth_provider** | string | `oidc` | Default authentication provider when `/auth/login` has no `?provider=` parameter. Valid: `oidc`, `openid`. |
 | **ubuntu_one_openid_url** | string | `https://login.ubuntu.com/+openid` | Ubuntu One OpenID 2.0 endpoint used by the `openid` provider. |
 | **ubuntu_one_realm** | string | | OpenID realm/return_to base URL. Required when `default_auth_provider=openid` unless derivable from the `ingress` integration external URL. |
+| **oidc_scopes**    | string | `openid email profile offline_access` | Space-separated list of OIDC scopes requested during user authentication (sets `OIDC_SCOPES` in the workload) and registered on the `oauth` integration. Note: `openid` and `email` are required for OIDC login. |
 | **cpu**            | string | | K8s CPU resource limit (e.g., `1` or `500m`). Sets the "limits" for the container.               |
 | **memory**         | string | | K8s memory resource limit (e.g., `1Gi`). Sets the "limits" for the container.                    |
 
