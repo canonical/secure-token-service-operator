@@ -374,6 +374,7 @@ class TestPebbleReadyEvent:
                         "OIDC_CLIENT_SECRET": OAUTH_CLIENT_SECRET,
                         "OIDC_PROVIDER_URL": OAUTH_PROVIDER_INFO["issuer_url"],
                         "OIDC_REDIRECT_URL": "http://secure-token-service.testing.svc.cluster.local:8080/auth/callback",
+                        "OIDC_SCOPES": "openid,email,profile,offline_access",
                         "UBUNTU_ONE_OPENID_URL": "https://login.ubuntu.com/+openid",
                     },
                 },
@@ -564,6 +565,93 @@ class TestAuthProviderConfig:
         assert env["DEFAULT_AUTH_PROVIDER"] == "oidc"
         assert "UBUNTU_ONE_REALM" not in env
 
+    def test_empty_oidc_scopes_is_blocked(
+        self,
+        mocked_update_client_config: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"oidc_scopes": ""},
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            "Invalid oidc_scopes: must be a non-empty space-separated list of scopes"
+        )
+        mocked_update_client_config.assert_not_called()
+
+    def test_whitespace_oidc_scopes_is_blocked(
+        self,
+        mocked_update_client_config: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"oidc_scopes": "   "},
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            "Invalid oidc_scopes: must be a non-empty space-separated list of scopes"
+        )
+        mocked_update_client_config.assert_not_called()
+
+    def test_custom_oidc_scopes_updates_env_and_oauth_relation(
+        self,
+        peer_integration: testing.PeerRelation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"oidc_scopes": "openid  email   profile"},
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_integration,
+            ],
+            secrets=[oauth_secret, cache_secret],
+            leader=True,
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, testing.ActiveStatus)
+        layer = state_out.get_container(WORKLOAD_CONTAINER).layers[WORKLOAD_CONTAINER]
+        env = layer.services[WORKLOAD_CONTAINER].environment
+        assert env["OIDC_SCOPES"] == "openid,email,profile"
+
+        oauth_rel_out = state_out.get_relation(oauth_integration.id)
+        assert oauth_rel_out.local_app_data["scope"] == "openid email profile"
+
+    def test_follower_does_not_update_oauth_client_config_on_config_changed(
+        self,
+        mocked_update_client_config: MagicMock,
+        mocked_charm_holistic_handler: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"oidc_scopes": "openid email"},
+            leader=False,
+        )
+
+        ctx.run(ctx.on.config_changed(), state_in)
+
+        mocked_charm_holistic_handler.assert_called_once()
+        mocked_update_client_config.assert_not_called()
+
 
 class TestDatabaseIntegrationEvents:
     def test_when_container_not_connected(
@@ -737,6 +825,43 @@ class TestOAuthIntegrationEvents:
         assert env["OIDC_CLIENT_SECRET"] == OAUTH_CLIENT_SECRET
         assert env["OIDC_PROVIDER_URL"] == OAUTH_PROVIDER_INFO["issuer_url"]
 
+    def test_relation_created_populates_default_oidc_scopes(self) -> None:
+        oauth_rel = testing.Relation(
+            endpoint="oauth",
+            interface="oauth",
+            remote_app_name="hydra",
+        )
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            relations=[oauth_rel],
+            leader=True,
+        )
+
+        state_out = ctx.run(ctx.on.relation_created(oauth_rel), state_in)
+
+        oauth_rel_out = state_out.get_relation(oauth_rel.id)
+        assert oauth_rel_out.local_app_data["scope"] == "openid email profile offline_access"
+
+    def test_relation_created_does_not_populate_empty_oidc_scopes(self) -> None:
+        oauth_rel = testing.Relation(
+            endpoint="oauth",
+            interface="oauth",
+            remote_app_name="hydra",
+        )
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"oidc_scopes": "   "},
+            relations=[oauth_rel],
+            leader=True,
+        )
+
+        state_out = ctx.run(ctx.on.relation_created(oauth_rel), state_in)
+
+        oauth_rel_out = state_out.get_relation(oauth_rel.id)
+        assert "scope" not in oauth_rel_out.local_app_data
+
 
 class TestTrustedCertificatesIntegrationEvents:
     def test_certificates_available(
@@ -785,6 +910,27 @@ class TestIstioIngressIntegration:
         mocked_submit_routes.assert_called_once()
         mocked_charm_holistic_handler.assert_called_once()
         mocked_update_client_config.assert_called_once()
+
+    def test_ingress_ready_does_not_update_client_config_when_oidc_scopes_empty(
+        self,
+        ingress_integration: testing.Relation,
+        mocked_submit_routes: MagicMock,
+        mocked_update_client_config: MagicMock,
+        mocked_charm_holistic_handler: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            config={"oidc_scopes": ""},
+            relations=[ingress_integration],
+            leader=True,
+        )
+
+        ctx.run(ctx.on.relation_changed(ingress_integration), state_in)
+
+        mocked_submit_routes.assert_called_once()
+        mocked_charm_holistic_handler.assert_called_once()
+        mocked_update_client_config.assert_not_called()
 
     @staticmethod
     def ingress_with_host(host: str = "sts.example.com") -> testing.Relation:

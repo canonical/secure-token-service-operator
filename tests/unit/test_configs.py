@@ -13,6 +13,7 @@ DEFAULT_CHARM_DATA = {
     "default_auth_provider": "oidc",
     "ubuntu_one_openid_url": "https://login.ubuntu.com/+openid",
     "ubuntu_one_realm": "",
+    "oidc_scopes": "openid email profile offline_access",
 }
 
 
@@ -36,6 +37,7 @@ class TestCharmConfig:
             "default_auth_provider": "oidc",
             "ubuntu_one_openid_url": "https://login.ubuntu.com/+openid",
             "ubuntu_one_realm": "",
+            "oidc_scopes": "openid email profile offline_access",
         }
 
         mocked_config.__getitem__.side_effect = lambda key: mocked_charm_data[key]
@@ -50,12 +52,36 @@ class TestCharmConfig:
             "NO_PROXY": "localhost,127.0.0.1,.svc.cluster.local",
             "DEFAULT_AUTH_PROVIDER": "oidc",
             "UBUNTU_ONE_OPENID_URL": "https://login.ubuntu.com/+openid",
+            "OIDC_SCOPES": "openid,email,profile,offline_access",
         }
 
     def test_provider_property(self) -> None:
         charm_config = create_charm_config(default_auth_provider="openid")
 
         assert charm_config.provider == "openid"
+
+    def test_oidc_scopes_property(self) -> None:
+        charm_config = create_charm_config(oidc_scopes="openid email")
+
+        assert charm_config.oidc_scopes == ["openid", "email"]
+
+    def test_custom_oidc_scopes_is_mapped_as_comma_separated(self) -> None:
+        charm_config = create_charm_config(oidc_scopes="openid email profile")
+
+        result = charm_config.to_env_vars()
+
+        assert result["OIDC_SCOPES"] == "openid,email,profile"
+
+    def test_extra_spaces_in_oidc_scopes_are_normalized(self) -> None:
+        charm_config = create_charm_config(oidc_scopes="  openid   email  profile  ")
+
+        assert charm_config.oidc_scopes == ["openid", "email", "profile"]
+        assert charm_config.to_env_vars()["OIDC_SCOPES"] == "openid,email,profile"
+
+    def test_empty_or_whitespace_oidc_scopes_returns_empty_list(self) -> None:
+        for empty in ("", "   "):
+            charm_config = create_charm_config(oidc_scopes=empty)
+            assert charm_config.oidc_scopes == []
 
     def test_explicit_realm_is_mapped(self) -> None:
         charm_config = create_charm_config(
