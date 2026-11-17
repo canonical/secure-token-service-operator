@@ -24,6 +24,11 @@ class CharmConfig:
         """The configured default authentication provider."""
         return str(self._config["default_auth_provider"])
 
+    @property
+    def oidc_scopes(self) -> list[str]:
+        """The configured space-separated OIDC scopes as a list of tokens."""
+        return str(self._config["oidc_scopes"]).split()
+
     def _resolve_realm(self) -> str:
         """Resolve the OpenID realm from config or, for openid, the ingress external URL."""
         if realm := self._config["ubuntu_one_realm"]:
@@ -40,6 +45,7 @@ class CharmConfig:
             "NO_PROXY": self._config["no_proxy"],
             "DEFAULT_AUTH_PROVIDER": self.provider,
             "UBUNTU_ONE_OPENID_URL": self._config["ubuntu_one_openid_url"],
+            "OIDC_SCOPES": ",".join(self.oidc_scopes),
         }
         if realm := self._resolve_realm():
             env_vars["UBUNTU_ONE_REALM"] = realm
