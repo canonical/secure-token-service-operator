@@ -1,17 +1,17 @@
 ## Purpose
 
-This capability governs how the charm validates operator-supplied configuration and maps it to the workload's environment variables. It covers the authentication provider selection (`oidc` vs Ubuntu One `openid`), the OpenID endpoint URL, and OpenID realm resolution — including derivation of the realm from the ingress integration and the blocked/waiting statuses reported when the configuration cannot produce a working provider setup.
+This capability governs how the charm validates operator-supplied configuration and maps it to the workload's environment variables and relation client configurations. It covers the authentication provider selection (`oidc` vs Ubuntu One `openid`), the OpenID endpoint URL, OpenID realm resolution — including derivation of the realm from the ingress integration and the blocked/waiting statuses reported when the configuration cannot produce a working provider setup — and OIDC scopes configuration (`oidc_scopes`).
 
 ## Requirements
 
 ### Requirement: Authentication provider config options are exposed with safe defaults
-The charm SHALL expose `default_auth_provider`, `ubuntu_one_openid_url`, and `ubuntu_one_realm` as configuration options. `default_auth_provider` SHALL default to `oidc`, and `ubuntu_one_openid_url` SHALL default to `https://login.ubuntu.com/+openid`. `ubuntu_one_realm` SHALL be optional with an empty default.
+The charm SHALL expose `default_auth_provider`, `ubuntu_one_openid_url`, `ubuntu_one_realm`, and `oidc_scopes` as configuration options. `default_auth_provider` SHALL default to `oidc`, `ubuntu_one_openid_url` SHALL default to `https://login.ubuntu.com/+openid`, and `oidc_scopes` SHALL default to `openid email profile offline_access`. `ubuntu_one_realm` SHALL be optional with an empty default.
 
-These defaults preserve backward compatibility: an existing deployment that has not set any of the three options behaves exactly as before this capability was introduced.
+These defaults preserve backward compatibility: an existing deployment that has not set any of the options behaves exactly as before this capability was introduced.
 
 #### Scenario: Default deployment is OIDC-only
-- **WHEN** the operator has not set any of the three options
-- **THEN** the workload runs with `DEFAULT_AUTH_PROVIDER=oidc` and `UBUNTU_ONE_OPENID_URL=https://login.ubuntu.com/+openid`, and no `UBUNTU_ONE_REALM` is set
+- **WHEN** the operator has not set any of the options
+- **THEN** the workload runs with `DEFAULT_AUTH_PROVIDER=oidc`, `UBUNTU_ONE_OPENID_URL=https://login.ubuntu.com/+openid`, and `OIDC_SCOPES="openid,email,profile,offline_access"`, and no `UBUNTU_ONE_REALM` is set
 
 ### Requirement: default_auth_provider is validated against accepted values
 The charm SHALL accept only `oidc` or `openid` as values for `default_auth_provider`. Any other value SHALL result in `BlockedStatus` naming the invalid value and the accepted set.
@@ -25,11 +25,15 @@ The charm SHALL accept only `oidc` or `openid` as values for `default_auth_provi
 - **THEN** the charm accepts the value and the workload runs with `DEFAULT_AUTH_PROVIDER=openid`
 
 ### Requirement: Config options are mapped to workload environment variables
-The charm SHALL map `default_auth_provider` to `DEFAULT_AUTH_PROVIDER`, `ubuntu_one_openid_url` to `UBUNTU_ONE_OPENID_URL`, and the resolved realm to `UBUNTU_ONE_REALM` in the workload environment. `UBUNTU_ONE_REALM` SHALL be present only when a realm has been resolved.
+The charm SHALL map `default_auth_provider` to `DEFAULT_AUTH_PROVIDER`, `ubuntu_one_openid_url` to `UBUNTU_ONE_OPENID_URL`, `oidc_scopes` (normalized as a comma-separated list) to `OIDC_SCOPES`, and the resolved realm to `UBUNTU_ONE_REALM` in the workload environment. `UBUNTU_ONE_REALM` SHALL be present only when a realm has been resolved.
 
 #### Scenario: OpenID configuration reaches the workload
 - **WHEN** the operator sets `default_auth_provider=openid` and `ubuntu_one_realm=https://sts.example.com`
 - **THEN** the workload environment contains `DEFAULT_AUTH_PROVIDER=openid` and `UBUNTU_ONE_REALM=https://sts.example.com`
+
+#### Scenario: Custom OIDC scopes reach the workload
+- **WHEN** the operator sets `oidc_scopes="openid email profile"`
+- **THEN** the workload environment contains `OIDC_SCOPES="openid,email,profile"`
 
 ### Requirement: OpenID realm is derived from the ingress when not explicitly configured
 When `default_auth_provider` is `openid` and `ubuntu_one_realm` is empty, the charm SHALL derive the realm from the ingress integration's external URL. An explicitly configured `ubuntu_one_realm` SHALL take precedence over the ingress-derived value.
@@ -59,3 +63,29 @@ When `default_auth_provider` is `oidc`, the charm SHALL NOT require or derive a 
 #### Scenario: Switching back to oidc without a realm
 - **WHEN** the operator changes `default_auth_provider` from `openid` to `oidc` with `ubuntu_one_realm` unset and no ingress
 - **THEN** the charm accepts the configuration and no realm validation applies
+
+### Requirement: oidc_scopes is validated to be non-empty
+The charm SHALL require `oidc_scopes` to be a non-empty space-separated list of scopes (containing at least one non-whitespace token). If `oidc_scopes` is empty or contains only whitespace, the unit SHALL enter `BlockedStatus` with a message indicating that `oidc_scopes` must be a non-empty space-separated list of scopes.
+
+#### Scenario: Empty oidc_scopes is rejected
+- **WHEN** the operator sets `oidc_scopes=""`
+- **THEN** the unit enters `BlockedStatus` with a message stating that `oidc_scopes` must be a non-empty space-separated list of scopes
+
+#### Scenario: Whitespace-only oidc_scopes is rejected
+- **WHEN** the operator sets `oidc_scopes="   "`
+- **THEN** the unit enters `BlockedStatus` with a message stating that `oidc_scopes` must be a non-empty space-separated list of scopes
+
+### Requirement: oidc_scopes is propagated to the OAuth client configuration
+The charm SHALL use the normalized `oidc_scopes` value (formatted as a single-space-separated string) as the `scope` parameter when registering or updating the OAuth2 client over the `oauth` relation. When the operator updates `oidc_scopes` to a valid non-empty value, the leader unit SHALL update the `oauth` relation databag with the new space-separated `scope`.
+
+#### Scenario: Default oidc_scopes registered on oauth relation
+- **WHEN** the `oauth` relation is created with default charm configuration
+- **THEN** the charm requests `scope="openid email profile offline_access"` in the `oauth` relation databag
+
+#### Scenario: Updating oidc_scopes updates the oauth relation databag
+- **WHEN** the operator changes `oidc_scopes` to `"openid email"` on a deployed charm related to an OAuth provider
+- **THEN** the leader unit updates the `oauth` relation databag `scope` to `"openid email"`
+
+#### Scenario: Invalid oidc_scopes is not written to the oauth relation databag
+- **WHEN** `oidc_scopes` is empty or whitespace-only and `oauth` `relation_created`, `config_changed`, or `ingress` relation events fire
+- **THEN** the charm does not write or overwrite `scope` in the `oauth` relation databag
