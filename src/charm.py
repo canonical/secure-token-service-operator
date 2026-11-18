@@ -64,7 +64,6 @@ from constants import (
     ISTIO_INGRESS_INTEGRATION_NAME,
     OAUTH_GRANT_TYPES,
     OAUTH_INTEGRATION_NAME,
-    OAUTH_SCOPES,
     OPENID_PROVIDER,
     PEER_INTEGRATION_NAME,
     RECEIVE_CA_CERT_INTEGRATION_NAME,
@@ -234,18 +233,25 @@ class SecureTokenServiceCharm(CharmBase):
         return urljoin(self._sts_http_address, "/auth/callback")
 
     @property
-    def _oauth_client_config(self) -> OauthClientConfig:
+    def _oauth_client_config(self) -> OauthClientConfig | None:
+        if not (scopes := self.charm_config.oidc_scopes):
+            return None
         return OauthClientConfig(
             redirect_uri=self._redirect_url,
-            scope=OAUTH_SCOPES,
+            scope=" ".join(scopes),
             grant_types=OAUTH_GRANT_TYPES,
         )
+
+    def _update_oauth_client_config(self) -> None:
+        if self.unit.is_leader() and (client_config := self._oauth_client_config):
+            self.oauth.update_client_config(client_config=client_config)
 
     def _on_start(self, event: StartEvent) -> None:
         self._holistic_handler(event)
 
     def _on_config_changed(self, event: ConfigChangedEvent) -> None:
         self._holistic_handler(event)
+        self._update_oauth_client_config()
 
     def _on_pebble_ready(self, event: PebbleReadyEvent) -> None:
         if not container_connectivity(self):
@@ -277,7 +283,7 @@ class SecureTokenServiceCharm(CharmBase):
         self._holistic_handler(event)
         if self.unit.is_leader():
             logger.info("This app's ingress URL: %s", self.istio_ingress.external_url)
-            self.oauth.update_client_config(client_config=self._oauth_client_config)
+            self._update_oauth_client_config()
 
     def _on_sts_info_ready(self, event: StsInfoRelationReadyEvent) -> None:
         self._holistic_handler(event)
@@ -353,6 +359,14 @@ class SecureTokenServiceCharm(CharmBase):
                 BlockedStatus(
                     f"Invalid default_auth_provider '{self.charm_config.provider}': "
                     f"must be one of {', '.join(VALID_AUTH_PROVIDERS)}"
+                ),
+                False,
+            )
+
+        if not self.charm_config.oidc_scopes:
+            return (
+                BlockedStatus(
+                    "Invalid oidc_scopes: must be a non-empty space-separated list of scopes"
                 ),
                 False,
             )

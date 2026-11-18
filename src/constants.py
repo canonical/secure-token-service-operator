@@ -32,7 +32,6 @@ OPENID_PROVIDER = "openid"
 VALID_AUTH_PROVIDERS = (OIDC_PROVIDER, OPENID_PROVIDER)
 
 OAUTH_INTEGRATION_NAME = "oauth"
-OAUTH_SCOPES = "openid email profile offline_access"
 OAUTH_GRANT_TYPES = ["authorization_code", "refresh_token"]
 
 RECEIVE_CA_CERT_INTEGRATION_NAME = "receive-ca-cert"

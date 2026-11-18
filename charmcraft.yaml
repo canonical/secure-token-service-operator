@@ -108,6 +108,15 @@ config:
         default_auth_provider is "oidc".
       type: string
       default: ""
+    oidc_scopes:
+      description: |
+        Space-separated list of OIDC scopes requested during user authentication
+        (sets OIDC_SCOPES in the workload environment as a comma-separated list)
+        and registered for the OAuth2 client on the oauth integration. Must be a
+        non-empty space-separated list; the "openid" and "email" scopes are
+        required by STS for OIDC login to succeed.
+      type: string
+      default: "openid email profile offline_access"
     cpu:
       description: |
         K8s cpu resource limit, e.g. "1" or "500m". Default is unset (no limit). This value is used

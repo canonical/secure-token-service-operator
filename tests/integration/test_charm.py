@@ -31,6 +31,7 @@ from integration.utils import (
     and_,
     any_error,
     get_ingress_external_host,
+    is_active_and_idle,
     is_blocked,
     remove_integration,
     unit_number,
@@ -157,16 +158,23 @@ def test_ingress_routing_and_redirect(juju) -> None:
     )
 
 
-def test_openid_provider_config_env_vars(juju: jubilant.Juju) -> None:
-    """Configuring the openid provider propagates the env vars to the workload."""
+def test_openid_provider_config_env_vars(
+    juju: jubilant.Juju,
+    app_integration_data: Callable,
+) -> None:
+    """Configuring the openid provider and oidc_scopes propagates to workload and oauth relation."""
     juju.config(
         STS_APP,
         {
             "default_auth_provider": "openid",
             "ubuntu_one_realm": "https://sts.example.com",
+            "oidc_scopes": "openid email",
         },
     )
-    juju.wait(ready=all_active(STS_APP), timeout=10 * 60)
+    juju.wait(
+        ready=and_(is_active_and_idle(STS_APP), is_active_and_idle(HYDRA_APP)),
+        timeout=10 * 60,
+    )
 
     plan = juju.cli(
         "exec",
@@ -181,9 +189,17 @@ def test_openid_provider_config_env_vars(juju: jubilant.Juju) -> None:
 
     assert "DEFAULT_AUTH_PROVIDER: openid" in plan
     assert "UBUNTU_ONE_REALM: https://sts.example.com" in plan
+    assert "OIDC_SCOPES: openid,email" in plan
 
-    juju.config(STS_APP, reset=["default_auth_provider", "ubuntu_one_realm"])
-    juju.wait(ready=all_active(STS_APP), timeout=10 * 60)
+    sts_oauth_client_data = app_integration_data(HYDRA_APP, OAUTH_INTEGRATION_NAME)
+    assert sts_oauth_client_data is not None
+    assert sts_oauth_client_data.get("scope") == "openid email"
+
+    juju.config(STS_APP, reset=["default_auth_provider", "ubuntu_one_realm", "oidc_scopes"])
+    juju.wait(
+        ready=and_(is_active_and_idle(STS_APP), is_active_and_idle(HYDRA_APP)),
+        timeout=10 * 60,
+    )
 
 
 def test_sts_scale_up(
