@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
       - name: TODOs to Issues
-        uses: alstr/todo-to-issue-action@64aca8fda7023259aada83ba44ad988c4c443657 # v5
+        uses: alstr/todo-to-issue-action@37bb7b56e58569ef273b60678048030a7f0c261a # v5
         with:
           IGNORE: "lib/charms/(?!secure_token_service/).*"
