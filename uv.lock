@@ -1,10 +1,10 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.15'",
     "python_full_version >= '3.12' and python_full_version < '3.15' and sys_platform == 'emscripten'",
-    "(python_full_version >= '3.11' and python_full_version < '3.15' and sys_platform != 'emscripten') or (python_full_version == '3.11.*' and sys_platform == 'emscripten')",
+    "python_full_version == '3.11.*' or (python_full_version >= '3.12' and python_full_version < '3.15' and sys_platform != 'emscripten')",
     "python_full_version < '3.11'",
 ]
 
@@ -1321,16 +1321,16 @@ wheels = [
 
 [[package]]
 name = "ops"
-version = "3.6.0"
+version = "3.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "pyyaml" },
     { name = "websocket-client" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d3/bb/79b7efdb1243cbad11b6568c51ba4fb7358cd2c4d13bfd971a77c0aa7440/ops-3.6.0.tar.gz", hash = "sha256:a1c3361049c66759840a436143b07c74c2a46dcc44cbfd1177a9051f849c7971", size = 579236, upload-time = "2026-02-26T04:19:12.689Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/03/d87306f7e704a0f75f461d40d6141bfbd1ea38ba329ca0e88f6c3a20cfd5/ops-3.9.0.tar.gz", hash = "sha256:f8fd7fa05359e9fc057663b1a652602f5803db0b37e1bbfe9b63971c54e4b3b3", size = 420379, upload-time = "2026-10-08T05:36:18.184Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8c/b6/d7daab4f841566d3cb0402d3463f7c1a00626724d6d7c02d7bf934ae6c86/ops-3.6.0-py3-none-any.whl", hash = "sha256:341c6688684446cc4b42860738898683feb271175bb9c4775ae68c81e4e0976a", size = 211856, upload-time = "2026-02-26T04:19:08.012Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/2f/faf83b14fd88c0e5ae26a4f5eb66f06f708fe322223823acfd45f8d32594/ops-3.9.0-py3-none-any.whl", hash = "sha256:2dc7a77edae408886ccd348be590df0e03589dfe5e3e115e238d5746850eed0c", size = 219271, upload-time = "2026-10-08T05:36:14.03Z" },
 ]
 
 [package.optional-dependencies]
@@ -1340,16 +1340,16 @@ testing = [
 
 [[package]]
 name = "ops-scenario"
-version = "8.6.0"
+version = "8.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ops" },
     { name = "pyyaml" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/63/c8/15d9f91eafa46d1dfa7f580be3274c22399f941724b74e274334de9468bb/ops_scenario-8.6.0.tar.gz", hash = "sha256:5a40a91fd5e9b6c8249933944dfc6e807ad2ddbd36a68c800746b9bb8a0eabfb", size = 71728, upload-time = "2026-02-26T04:19:15.34Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/c7/51b9878f732ffb5363ec34c9a078db3f8fbb691c1fc3d225d959d1f9c6c0/ops_scenario-8.9.0.tar.gz", hash = "sha256:08e4aae5d6306f0a0b772c806d6f72d8238e106459303d2fb9288b72cbcc348f", size = 132424, upload-time = "2026-10-08T05:36:19.545Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/d2/fb3176805339d3aa95b9d6e43478d0e34355c6c46f27723249f46bb8d19d/ops_scenario-8.6.0-py3-none-any.whl", hash = "sha256:469490a042dc45eca24eef7aa1b9214704d97d67503ad8465414ab68dc989d30", size = 64241, upload-time = "2026-02-26T04:19:09.579Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/f8/2c2d655af358c708e49f8bffa0f40b4fa81e84ad9c234372543f143bc737/ops_scenario-8.9.0-py3-none-any.whl", hash = "sha256:a6ff1ed5d0f71b419cf9aa36c85094afbd4fb44bae0567a151634f8d0dde2351", size = 75885, upload-time = "2026-10-08T05:36:15.641Z" },
 ]
 
 [[package]]
@@ -1823,7 +1823,7 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.15'",
     "python_full_version >= '3.12' and python_full_version < '3.15' and sys_platform == 'emscripten'",
-    "(python_full_version >= '3.11' and python_full_version < '3.15' and sys_platform != 'emscripten') or (python_full_version == '3.11.*' and sys_platform == 'emscripten')",
+    "python_full_version == '3.11.*' or (python_full_version >= '3.12' and python_full_version < '3.15' and sys_platform != 'emscripten')",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/aa/2a/9618a122aeb2a169a28b03889a2995fe297588964333d4a7d67bdf46e147/rpds_py-2026.6.3.tar.gz", hash = "sha256:1cebd1337c242e4ec2293e541f712b2da849b29f48f0c293684b71c0632625d4", size = 64051, upload-time = "2026-06-30T07:17:53.009Z" }
 wheels = [
@@ -2032,7 +2032,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "jsonschema", specifier = "==4.26.0" },
     { name = "lightkube-extensions" },
-    { name = "ops", specifier = "==3.6.0" },
+    { name = "ops", specifier = "==3.9.0" },
     { name = "pydantic", specifier = "~=2.12.0" },
     { name = "tenacity" },
 ]
