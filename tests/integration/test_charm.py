@@ -28,11 +28,11 @@ from integration.constants import (
 from integration.utils import (
     StatusPredicate,
     all_active,
+    all_blocked,
     and_,
     any_error,
     get_ingress_external_host,
     is_active_and_idle,
-    is_blocked,
     remove_integration,
     unit_number,
 )
@@ -62,6 +62,8 @@ def test_build_and_deploy_hydra_core_deps(juju: jubilant.Juju) -> None:
         channel="2/stable",
         trust=True,
     )
+    # The gateways need the CRDs that the control plane installs.
+    juju.wait(ready=all_active(ISTIO_APP), timeout=10 * 60)
     juju.deploy(
         ISTIO_INGRESS_APP,
         channel="2/stable",
@@ -171,35 +173,32 @@ def test_openid_provider_config_env_vars(
             "oidc_scopes": "openid email",
         },
     )
-    juju.wait(
-        ready=and_(is_active_and_idle(STS_APP), is_active_and_idle(HYDRA_APP)),
-        timeout=10 * 60,
-    )
+    try:
+        juju.wait(
+            ready=and_(is_active_and_idle(STS_APP), is_active_and_idle(HYDRA_APP)),
+            timeout=10 * 60,
+        )
 
-    plan = juju.cli(
-        "exec",
-        "--unit",
-        f"{STS_APP}/0",
-        "--container",
-        WORKLOAD_CONTAINER,
-        "--",
-        "pebble",
-        "plan",
-    )
+        plan = juju.ssh(
+            f"{STS_APP}/0",
+            "/charm/bin/pebble",
+            "plan",
+            container=WORKLOAD_CONTAINER,
+        )
 
-    assert "DEFAULT_AUTH_PROVIDER: openid" in plan
-    assert "UBUNTU_ONE_REALM: https://sts.example.com" in plan
-    assert "OIDC_SCOPES: openid,email" in plan
+        assert "DEFAULT_AUTH_PROVIDER: openid" in plan
+        assert "UBUNTU_ONE_REALM: https://sts.example.com" in plan
+        assert "OIDC_SCOPES: openid,email" in plan
 
-    sts_oauth_client_data = app_integration_data(HYDRA_APP, OAUTH_INTEGRATION_NAME)
-    assert sts_oauth_client_data is not None
-    assert sts_oauth_client_data.get("scope") == "openid email"
-
-    juju.config(STS_APP, reset=["default_auth_provider", "ubuntu_one_realm", "oidc_scopes"])
-    juju.wait(
-        ready=and_(is_active_and_idle(STS_APP), is_active_and_idle(HYDRA_APP)),
-        timeout=10 * 60,
-    )
+        sts_oauth_client_data = app_integration_data(HYDRA_APP, OAUTH_INTEGRATION_NAME)
+        assert sts_oauth_client_data is not None
+        assert sts_oauth_client_data.get("scope") == "openid email"
+    finally:
+        juju.config(STS_APP, reset=["default_auth_provider", "ubuntu_one_realm", "oidc_scopes"])
+        juju.wait(
+            ready=and_(is_active_and_idle(STS_APP), is_active_and_idle(HYDRA_APP)),
+            timeout=10 * 60,
+        )
 
 
 def test_sts_scale_up(
@@ -227,10 +226,10 @@ def test_sts_scale_up(
 @pytest.mark.parametrize(
     "remote_app_name,integration_name,endpoint,is_status",
     [
-        (DB_APP, DATABASE_INTEGRATION_NAME, "", is_blocked),
-        (HYDRA_APP, OAUTH_INTEGRATION_NAME, "", is_blocked),
-        (CA_APP, RECEIVE_CA_CERT_INTEGRATION_NAME, "send-ca-cert", is_blocked),
-        (VALKEY_APP, CACHE_INTEGRATION_NAME, "", is_blocked),
+        (DB_APP, DATABASE_INTEGRATION_NAME, "", all_blocked),
+        (HYDRA_APP, OAUTH_INTEGRATION_NAME, "", all_blocked),
+        (CA_APP, RECEIVE_CA_CERT_INTEGRATION_NAME, "send-ca-cert", all_blocked),
+        (VALKEY_APP, CACHE_INTEGRATION_NAME, "", all_blocked),
     ],
 )
 def test_remove_integration(
@@ -249,8 +248,8 @@ def test_remove_integration(
         )
 
     juju.wait(
-        ready=all_active(STS_APP),
-        error=any_error(STS_APP),
+        ready=and_(is_active_and_idle(STS_APP), is_active_and_idle(remote_app_name)),
+        error=any_error(STS_APP, remote_app_name),
         timeout=10 * 60,
     )
 
