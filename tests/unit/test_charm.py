@@ -23,6 +23,7 @@ from scenario import TCPPort
 
 from charm import SecureTokenServiceCharm
 from constants import CACHE_INTEGRATION_NAME, STS_GRPC_PORT, STS_HTTP_PORT, WORKLOAD_CONTAINER
+from exceptions import PebbleServiceError
 
 
 class TestStartEvent:
@@ -31,6 +32,16 @@ class TestStartEvent:
         state_in = create_state(can_connect=False)
 
         ctx.run(ctx.on.start(), state_in)
+
+        mocked_charm_holistic_handler.assert_called_once()
+
+    def test_when_update_status_event_emitted(
+        self, mocked_charm_holistic_handler: MagicMock
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(can_connect=False)
+
+        ctx.run(ctx.on.update_status(), state_in)
 
         mocked_charm_holistic_handler.assert_called_once()
 
@@ -301,6 +312,40 @@ class TestPebbleReadyEvent:
 
         out_container = state_out.get_container(WORKLOAD_CONTAINER)
         assert len(out_container.layers) > 0
+
+    @patch("charm.PebbleService.plan", side_effect=PebbleServiceError("failed"))
+    def test_when_pebble_plan_fails_defers_event(
+        self,
+        mocked_plan: MagicMock,
+        peer_integration: testing.Relation,
+        database_integration: testing.Relation,
+        oauth_integration: testing.Relation,
+        receive_ca_cert_integration: testing.Relation,
+        cache_integration: testing.Relation,
+        oauth_secret: testing.Secret,
+        cache_secret: testing.Secret,
+        mocked_migration_needed: MagicMock,
+    ) -> None:
+        ctx = testing.Context(SecureTokenServiceCharm)
+        state_in = create_state(
+            can_connect=True,
+            relations=[
+                peer_integration,
+                database_integration,
+                oauth_integration,
+                receive_ca_cert_integration,
+                cache_integration,
+            ],
+            secrets=[oauth_secret, cache_secret],
+        )
+
+        container = state_in.get_container(WORKLOAD_CONTAINER)
+        state_out = ctx.run(ctx.on.pebble_ready(container), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            f"Failed to restart the service, please check the {WORKLOAD_CONTAINER} logs"
+        )
+        assert len(state_out.deferred) == 1
 
     def test_workload_service_set_when_event_emitted(
         self,

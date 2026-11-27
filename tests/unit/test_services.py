@@ -140,10 +140,12 @@ class TestPebbleService:
         mocked_container.start.assert_called_once_with(WORKLOAD_SERVICE)
         mocked_container.replan.assert_not_called()
 
+    @patch("tenacity.nap.time.sleep")
     @patch("ops.pebble.Layer")
     def test_plan_failure(
         self,
         mocked_layer: MagicMock,
+        mocked_sleep: MagicMock,
         mocked_container: MagicMock,
         pebble_service: PebbleService,
     ) -> None:
@@ -155,7 +157,7 @@ class TestPebbleService:
         mocked_container.add_layer.assert_called_once_with(
             WORKLOAD_SERVICE, mocked_layer, combine=True
         )
-        replan.assert_called_once()
+        assert replan.call_count == 4
 
     def test_render_pebble_layer(self, pebble_service: PebbleService) -> None:
         mock_source = MagicMock(spec=EnvVarConvertible)
