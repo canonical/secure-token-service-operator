@@ -62,6 +62,8 @@ def test_build_and_deploy_hydra_core_deps(juju: jubilant.Juju) -> None:
         channel="2/stable",
         trust=True,
     )
+    # The gateways need the CRDs that the control plane installs.
+    juju.wait(ready=all_active(ISTIO_APP), timeout=10 * 60)
     juju.deploy(
         ISTIO_INGRESS_APP,
         channel="2/stable",
