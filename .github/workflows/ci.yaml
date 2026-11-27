@@ -35,4 +35,5 @@ jobs:
       # TODO: Enable when onboarded to charmcraft cache
       use-charmcraftcache: false
       node-size: large
+      k8s-channel: "1.34-strict/stable"
       juju-channels: '["3.6/stable", "4.0/stable"]'
