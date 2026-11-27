@@ -6,6 +6,7 @@ from collections import ChainMap
 
 from ops import Container, ModelError, Unit
 from ops.pebble import Layer, LayerDict
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from cli import CommandLine
 from constants import (
@@ -94,6 +95,11 @@ class PebbleService:
         self._container = unit.get_container(WORKLOAD_CONTAINER)
         self._layer_dict: LayerDict = PEBBLE_LAYER_DICT
 
+    @retry(
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+        stop=stop_after_attempt(4),
+        reraise=True,
+    )
     def _restart_service(self) -> None:
         if not self._container.get_service(WORKLOAD_SERVICE).is_running():
             self._container.start(WORKLOAD_SERVICE)

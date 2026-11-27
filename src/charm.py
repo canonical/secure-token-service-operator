@@ -50,6 +50,7 @@ from ops import (
     RelationBrokenEvent,
     StartEvent,
     StatusBase,
+    UpdateStatusEvent,
     WaitingStatus,
     main,
 )
@@ -137,6 +138,7 @@ class SecureTokenServiceCharm(CharmBase):
         self.trusted_cert_transfer = TrustedCertificatesTransferIntegration(self)
 
         self.framework.observe(self.on.start, self._on_start)
+        self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(self.on.secure_token_service_pebble_ready, self._on_pebble_ready)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.run_migration_action, self._on_run_migration_action)
@@ -247,6 +249,9 @@ class SecureTokenServiceCharm(CharmBase):
             self.oauth.update_client_config(client_config=client_config)
 
     def _on_start(self, event: StartEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_update_status(self, event: UpdateStatusEvent) -> None:
         self._holistic_handler(event)
 
     def _on_config_changed(self, event: ConfigChangedEvent) -> None:
@@ -480,6 +485,7 @@ class SecureTokenServiceCharm(CharmBase):
             self.unit.status = BlockedStatus(
                 f"Failed to restart the service, please check the {WORKLOAD_CONTAINER} logs"
             )
+            event.defer()
             return
 
         self._send_sts_info_rel_data()

@@ -77,8 +77,8 @@ def get_app_integration_data(
                 ),
                 None,
             )
-            return rel["application-data"] if rel else None
-    return data["application-data"]
+            return rel.get("application-data") if rel else None
+    return data.get("application-data")
 
 
 def get_unit_address(juju: jubilant.Juju, app_name: str, unit_num: int = 0) -> str:
